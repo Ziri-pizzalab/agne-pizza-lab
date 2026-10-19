@@ -95,7 +95,7 @@ function results(){
  $('ingredientGroups').replaceChildren();if(!c.valid){$('doughTotal').textContent='—';$('ballsResult').textContent='—';return}
  const blended=state.flours.length>1;
  const preFlours=c.flours.filter(f=>f.seed>1e-7).map(f=>(f.name||'名称未設定')+' '+fmt(f.seed)+'g');
- const mainFlours=c.flours.filter(f=>f.grams-f.seed>1e-7).map(f=>(f.name||'名称未設定')+' '+fmt(f.grams-f.seed)+'g');
+ const mainFlours=c.flours.filter(f=>f.grams-(state.process==='straight'?0:f.seed)>1e-7).map(f=>(f.name||'名称未設定')+' '+fmt(f.grams-(state.process==='straight'?0:f.seed))+'g');
  const allFlours=c.flours.map(f=>(f.name||'名称未設定')+' '+fmt(f.pct)+'%（'+fmt(f.grams)+'g）');
  if(state.process!=='straight')group('ingredientGroups','① 発酵種（'+(state.process==='biga'?'ビガ':'ポーリッシュ')+'）','seed',[['種用の粉',c.seedFlour,blended?preFlours:[]],['種用の水',c.seedWater],['種用イースト',c.seedYeast]]);
  group('ingredientGroups',state.process==='straight'?'① 本練り':'② 本練り','main',[['本練り用の粉',c.totalFlour-c.seedFlour,blended?mainFlours:[]],['本練り用の水',c.water-c.seedWater],['本練り用イースト',Number(state.yeast)-c.seedYeast]]);
