@@ -1,7 +1,7 @@
 {
   "name": "Ange Pizza Lab",
   "short_name": "Pizza Lab",
-  "description": "ピザ生地配合・発酵・焼成ガイド",
+  "description": "ピザ生地配合・仕込みノート・焼成ガイド",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

@@ -11,3 +11,15 @@ h3{font-size:15px;margin:19px 0 10px}.extra-grid{display:grid;grid-template-colu
 
 /* Ver.2.2: notebook and dual-unit blend entry */
 .flour-grams{width:98px}.flour-row .flour-grams input{width:100%}.flour-row .flour-pct{width:88px}.flour-row .auto-pct{min-height:42px}.two-col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.note-stage{margin:18px 0;padding:13px;border-radius:13px;background:#faf3ed}.note-stage h3{margin:3px 0 9px}.duration-label{margin:2px 0;font-size:13px;font-weight:700;color:#9a555a}textarea{width:100%;border:1px solid #dfcec5;border-radius:10px;padding:12px;font:inherit;font-size:16px;resize:vertical;background:#fff;color:#352e2d}.note-entry{padding:13px 0;border-top:1px solid #eee}.note-entry strong{display:block}.note-entry small{color:#85736d}.note-entry p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.6}.note-entry .actions{margin-top:8px}.backup-settings{border-top:1px solid #eaded8;margin-top:20px;padding-top:14px}.backup-settings summary{cursor:pointer;font-size:14px;font-weight:700;color:#9b4551}.restore-label{display:block;font-size:13px;margin-top:12px;color:#8e4448;font-weight:650}.restore-label input{margin-top:6px;font-size:13px}.note-status-ok{color:#317e5a}@media(max-width:390px){.flour-row{gap:6px}.flour-row .flour-name{flex-basis:110px}.flour-row .flour-pct{width:75px}.flour-row .flour-grams{width:83px}.flour-row input{padding:8px 5px}.two-col{grid-template-columns:1fr}}
+
+/* Ver.2.3: prevent iOS datetime-local controls from overflowing their cards. */
+#ferment .card, #ferment .note-stage, #ferment .field, #ferment .two-col > *, #ferment .note-date-stack > * { min-width:0; max-width:100%; }
+#ferment input, #ferment select, #ferment textarea { display:block; width:100%; max-width:100%; min-width:0; box-sizing:border-box; }
+#ferment input[type="datetime-local"] { -webkit-appearance:none; appearance:none; min-height:49px; padding:10px 11px; font-size:16px; }
+#ferment .note-date-stack { display:grid; grid-template-columns:minmax(0,1fr); gap:2px; width:100%; }
+#ferment .note-datetime-row { display:block; width:100%; min-width:0; }
+#ferment .two-col {grid-template-columns:repeat(2,minmax(0,1fr))}
+#ferment .note-stage {overflow:hidden}
+#ferment .duration-label {margin-top:9px; overflow-wrap:anywhere}
+.tabs button[data-tab="saved"] {font-size:13px; line-height:1.2;}
+@media(max-width:440px){#ferment .two-col{grid-template-columns:minmax(0,1fr)}#ferment .card{padding:16px}#ferment .note-stage{padding:12px}}
