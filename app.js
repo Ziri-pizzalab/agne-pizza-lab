@@ -153,3 +153,12 @@ const baseShowRecipes=showRecipes;showRecipes=function(){baseShowRecipes();if(ed
 $('reset').onclick=()=>{if(confirm('現在の配合だけ初期化しますか？（保存レシピと採用済みプリセットは残ります）')){state=clone(defaults);normalise();persist();redraw()}};
 normalise();prepareSeeds();redraw();showRecipes();initNotes();initBackups();
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+
+
+// Ver.2.5: viewport-safe page-top navigation; does not change saved data.
+(()=>{const topButton=document.getElementById('backToTop');if(!topButton)return;
+const updateTopButton=()=>{topButton.hidden=window.scrollY<260;};
+topButton.addEventListener('click',()=>window.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'}));
+window.addEventListener('scroll',updateTopButton,{passive:true});
+window.addEventListener('pageshow',updateTopButton);
+updateTopButton();})();

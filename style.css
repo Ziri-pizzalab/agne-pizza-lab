@@ -26,3 +26,20 @@ h3{font-size:15px;margin:19px 0 10px}.extra-grid{display:grid;grid-template-colu
 
 /* Ver.2.4: compact search and incremental history */
 .list-tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(105px,32%);gap:8px;margin:16px 0 12px;align-items:center}.list-tools input,.list-tools select{width:100%;min-width:0;max-width:100%;box-sizing:border-box}.list-more{width:100%;margin-top:12px}.saved-item .actions{flex-wrap:wrap;gap:6px}.saved-item .actions button{min-width:58px}.edit-active{border:2px solid #b74d54!important}.note-entry{overflow-wrap:anywhere}@media(max-width:350px){.list-tools{grid-template-columns:1fr}}
+
+
+/* Ver.2.5: mobile recipe management and return-to-top */
+#saved .list-tools,#ferment .list-tools{display:grid;grid-template-columns:minmax(0,1fr);gap:9px;align-items:stretch}
+#saved .list-tools input,#ferment .list-tools input{width:100%;min-width:0;min-height:48px}
+#saved .list-tools select,#ferment .list-tools select{width:100%;min-height:44px}
+#saved #recipeEditActions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:10px 0 16px}
+#saved #saveRecipe{max-width:100%}
+#saved #recipeEditActions button{min-width:0;width:100%;padding:13px 7px;white-space:normal;line-height:1.35}
+#saved #recipeList .saved-item{align-items:stretch;flex-direction:column;gap:12px}
+#saved #recipeList .saved-item .actions{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#saved #recipeList .saved-item .actions button{min-width:0;padding:11px 4px!important}
+.back-to-top{position:fixed;right:max(14px,env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));z-index:100;min-width:55px;min-height:55px;border:1px solid #efc7ca;border-radius:18px;background:#b74d54;color:#fff;box-shadow:0 5px 19px #60333340;font-size:23px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05;touch-action:manipulation}
+.back-to-top span{font-size:10px;margin-top:2px}
+.back-to-top[hidden]{display:none!important}
+@media(min-width:560px){#saved .list-tools,#ferment .list-tools{grid-template-columns:minmax(0,1fr) 170px}#saved #recipeList .saved-item{flex-direction:row;align-items:center}#saved #recipeList .saved-item .actions{width:auto;display:flex}}
+@media(max-width:350px){#saved #recipeEditActions{grid-template-columns:minmax(0,1fr)}}
