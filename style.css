@@ -107,3 +107,7 @@ body:not(.recipe-tab-active) .back-to-top{bottom:calc(20px + env(safe-area-inset
 #ferment .note-entry details{margin:8px 0}
 #ferment .note-entry details summary{cursor:pointer;color:#995c72;font-weight:700;font-size:13px;padding:6px 0}
 #ferment .note-entry details p{white-space:pre-wrap;font-size:13px;line-height:1.6}
+
+/* RC2.5: compact, touch-friendly new note action */
+#noteNewTab{font-size:19px;letter-spacing:1px;min-height:48px;touch-action:manipulation}
+#noteNewTab.active{background:#fff4f6;color:#a04464}

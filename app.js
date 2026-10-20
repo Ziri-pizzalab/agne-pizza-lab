@@ -68,7 +68,7 @@ function calc(){
 }
 function slider(host,label,key,min,max,step,unit){
  const wrap=document.createElement('div');wrap.className='control';const top=document.createElement('div');top.className='top';const text=document.createElement('span');text.textContent=label;const out=document.createElement('output');const input=document.createElement('input');input.type='range';Object.assign(input,{min,max,step,value:state[key]});const refresh=()=>out.textContent=fmt(Number(state[key]))+unit;
- input.oninput=()=>{state[key]=Number(input.value);if(key==='totalFlour'||key==='ball'||key==='quantity'||key==='hydration'||key==='salt'||key==='oil')prepareSeeds();refresh();persist();results();if(['ball','quantity','totalFlour','hydration','salt','oil'].includes(key))flourRows()};
+ input.oninput=()=>{state[key]=Number(input.value);if(key==='totalFlour'||key==='ball'||key==='quantity'||key==='hydration'||key==='salt'||key==='oil')prepareSeeds();refresh();persist();results();if(key==='totalFlour')updateFlourRowsInPlace();else if(['ball','quantity','hydration','salt','oil'].includes(key))updateFlourRowsInPlace()};
  top.append(text,out);wrap.append(top,input);$(host).append(wrap);refresh();
 }
 function redraw(){
@@ -85,6 +85,19 @@ function redraw(){
  $('yeast').max=Math.max(10,Math.ceil(state.yeast));$('yeast').value=state.yeast;$('prefermentYeast').value=state.prefermentYeast;$('yeastSplitField').hidden=state.process==='straight';
  for(let i=0;i<2;i++){$('extraName'+i).value=state.extras[i].name;$('extraPct'+i).value=state.extras[i].pct||''}
  flourRows();results();
+}
+// Keep the iPhone range slider's drag uninterrupted: update displayed numbers,
+// never replace a focused slider or flour input while the slider is moving.
+function updateFlourRowsInPlace(){
+ const c=calc();const rows=document.querySelectorAll('#flourRows .rc2-flour');
+ if(rows.length!==c.flours.length){flourRows();return}
+ rows.forEach((row,i)=>{
+  const weight=row.querySelector('.flour-grams input');
+  if(weight&&document.activeElement!==weight)weight.value=String(c.flours[i].grams);
+  const pct=row.querySelector('.rc2-pct');if(pct)pct.textContent=fmt(c.flours[i].pct)+'%';
+  const seed=row.querySelector('.rc2-seed input');
+  if(seed){seed.max=String(c.flours[i].grams);if(document.activeElement!==seed)seed.value=String(Math.round(state.flours[i].seed))}
+ });
 }
 function flourRows(){
  const c=calc(),host=$('flourRows');host.replaceChildren();
@@ -159,7 +172,7 @@ function initNotes(){if(!$('noteStarted').value)$('noteStarted').value=dateTimeL
 const BACKUP_KEYS=['ange-v3-current','ange-v3-adopted','ange-v3-recipes',NOTES_KEY];
 function initBackups(){$('exportBackup').onclick=()=>{const items={};for(const k of BACKUP_KEYS){const s=localStorage.getItem(k);if(s!==null)items[k]=JSON.parse(s)}const json=JSON.stringify({app:'Ange Pizza Lab',formatVersion:1,exportedAt:new Date().toISOString(),items},null,2);const a=document.createElement('a');const url=URL.createObjectURL(new Blob([json],{type:'application/json'}));a.href=url;a.download='Ange_Pizza_Lab_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);$('backupStatus').textContent='バックアップを作成しました。iCloud Driveなどに保存してください'};$('importBackup').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const parsed=JSON.parse(await file.text());if(parsed.app!=='Ange Pizza Lab'||parsed.formatVersion!==1||!parsed.items||typeof parsed.items!=='object'||Object.keys(parsed.items).some(k=>!BACKUP_KEYS.includes(k)))throw Error('形式が異なります');if(!confirm('現在の保存レシピ・仕込み履歴をバックアップ内容で置き換えます。続けますか？'))return;for(const [key,value] of Object.entries(parsed.items))localStorage.setItem(key,JSON.stringify(value));location.reload()}catch(err){$('backupStatus').textContent='復元できません。Ange Pizza Labのバックアップファイルを選んでください'}finally{e.target.value=''}}}
 function switchNoteView(view){const history=view!=='new';const editor=document.querySelector('.note-editor-card');const list=document.querySelector('.note-history-card');if(!editor||!list)return;editor.hidden=history;list.hidden=!history;for(const [id,active] of [['noteHistoryTab',history],['noteNewTab',!history]]){const b=$(id);b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active))}if(history)showNotes()}
-function selectTab(tab){document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===tab));document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.body.classList.toggle('recipe-tab-active',tab==='recipe');const summary=$('stickySummary');if(summary){summary.hidden=tab!=='recipe';if(tab!=='recipe'&&$('summaryDetails')&&!$('summaryDetails').hidden)$('summaryToggle').click()}if(tab==='ferment')switchNoteView('history')}
+function selectTab(tab){document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===tab));document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.body.classList.toggle('recipe-tab-active',tab==='recipe');const summary=$('stickySummary');if(summary){summary.hidden=tab!=='recipe';if(tab!=='recipe'&&$('summaryDetails')&&!$('summaryDetails').hidden)$('summaryToggle').click()}if(tab==='ferment')switchNoteView('history');window.dispatchEvent(new Event('scroll'))}
 $('noteHistoryTab').onclick=()=>switchNoteView('history');
 $('noteNewTab').onclick=()=>{if(editingNoteId){resetNoteForm();$('noteStatus').textContent=''}switchNoteView('new')};
 $('quickSaveRecipe').onclick=()=>openRecipeModal();
@@ -198,7 +211,7 @@ if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.s
 
 // Ver.2.5: viewport-safe page-top navigation; does not change saved data.
 (()=>{const topButton=document.getElementById('backToTop');if(!topButton)return;
-const updateTopButton=()=>{topButton.hidden=window.scrollY<260||!$('summaryDetails').hidden;};
+const updateTopButton=()=>{topButton.hidden=window.scrollY<260||($('stickySummary')&&!$('stickySummary').hidden&&!$('summaryDetails').hidden);};
 topButton.addEventListener('click',()=>window.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'}));
 window.addEventListener('scroll',updateTopButton,{passive:true});
 window.addEventListener('pageshow',updateTopButton);
