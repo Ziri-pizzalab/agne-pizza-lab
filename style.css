@@ -23,3 +23,6 @@ h3{font-size:15px;margin:19px 0 10px}.extra-grid{display:grid;grid-template-colu
 #ferment .duration-label {margin-top:9px; overflow-wrap:anywhere}
 .tabs button[data-tab="saved"] {font-size:13px; line-height:1.2;}
 @media(max-width:440px){#ferment .two-col{grid-template-columns:minmax(0,1fr)}#ferment .card{padding:16px}#ferment .note-stage{padding:12px}}
+
+/* Ver.2.4: compact search and incremental history */
+.list-tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(105px,32%);gap:8px;margin:16px 0 12px;align-items:center}.list-tools input,.list-tools select{width:100%;min-width:0;max-width:100%;box-sizing:border-box}.list-more{width:100%;margin-top:12px}.saved-item .actions{flex-wrap:wrap;gap:6px}.saved-item .actions button{min-width:58px}.edit-active{border:2px solid #b74d54!important}.note-entry{overflow-wrap:anywhere}@media(max-width:350px){.list-tools{grid-template-columns:1fr}}
