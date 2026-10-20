@@ -36,13 +36,27 @@ function flourTotal(){
  const factor=1+(Number(state.hydration)+Number(state.salt)+Number(state.oil)+extraPct)/100;
  return state.mode==='target'?(Number(state.ball)*Number(state.quantity)-Number(state.yeast))/factor:Number(state.totalFlour);
 }
+// Allocate integer grams: the final flour always absorbs rounding differences.
+function allocateFlourGrams(total,flours){
+ const grams=Math.max(0,Math.round(total));
+ if(!flours.length)return [];
+ const result=[];let remaining=grams;
+ for(let i=0;i<flours.length-1;i++){
+  const desired=Math.round(grams*Math.max(0,Number(flours[i].pct)||0)/100);
+  const value=Math.max(0,Math.min(remaining,desired));
+  result.push(value);remaining-=value;
+ }
+ result.push(remaining);
+ return result;
+}
 function prepareSeeds(){
  const total=flourTotal();if(!Number.isFinite(total))return;
- for(const f of state.flours){f.seed=Math.max(0,Math.min(Number(f.seed)||0,Math.max(0,total*f.pct/100)))}
+ const weights=allocateFlourGrams(total,state.flours);
+ state.flours.forEach((f,i)=>{f.seed=Math.max(0,Math.min(Number(f.seed)||0,weights[i]))})
  state.bigaFlour=state.process==='straight'?0:round(state.flours.reduce((s,f)=>s+f.seed,0),5);
 }
 function calc(){
- const totalFlour=flourTotal();const flours=state.flours.map(f=>({...f,grams:totalFlour*f.pct/100}));
+ const totalFlour=Math.round(flourTotal());const weights=allocateFlourGrams(totalFlour,state.flours);const flours=state.flours.map((f,i)=>({...f,grams:weights[i],pct:totalFlour?weights[i]/totalFlour*100:0}));
  const seedFlour=state.process==='straight'?0:flours.reduce((s,f)=>s+f.seed,0);
  const seedWater=seedFlour*Number(state.bigaHyd)/100;
  const water=totalFlour*Number(state.hydration)/100;
@@ -63,7 +77,7 @@ function redraw(){
  $('styleSource').replaceChildren(document.createTextNode(presets[state.style].source+' '));if(presets[state.style].url){const a=document.createElement('a');a.textContent='参考元';a.href=presets[state.style].url;a.target='_blank';a.rel='noopener';$('styleSource').append(a)}
  document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===state.mode));
  $('baseControls').replaceChildren();$('ratioControls').replaceChildren();$('prefermentControls').replaceChildren();
- if(state.mode==='flour'){slider('baseControls','総粉量','totalFlour',100,1800,10,'g')}
+ if(state.mode==='flour'){slider('baseControls','総粉量','totalFlour',100,1800,1,'g')}
  slider('baseControls','ピザ玉の重さ','ball',80,400,5,'g');if(state.mode==='target')slider('baseControls','作りたい個数','quantity',1,24,1,'個');
  $('prefermentBox').hidden=state.process==='straight';$('prefermentTitle').textContent=state.process==='poolish'?'ポーリッシュ':'ビガ';
  if(state.process!=='straight')slider('prefermentControls','種の加水率','bigaHyd',state.process==='poolish'?80:40,state.process==='poolish'?120:80,1,'%');
@@ -77,11 +91,27 @@ function flourRows(){
  state.flours.forEach((f,i)=>{
   const row=document.createElement('div');row.className='flour-row rc2-flour';
   const name=document.createElement('div');name.className='flour-name';name.innerHTML='<label>粉 '+(i+1)+'</label>';const nameInput=document.createElement('input');nameInput.value=f.name;nameInput.placeholder='粉の名前';nameInput.oninput=()=>{f.name=nameInput.value;persist();results()};name.append(nameInput);
-  const grams=document.createElement('div');grams.className='flour-grams';grams.innerHTML='<label>粉量 g</label>';const g=document.createElement('input');g.type='number';g.min='0';g.step='.1';g.inputMode='decimal';g.value=String(round(c.flours[i].grams,2));g.setAttribute('aria-label','粉'+(i+1)+'の重量');g.onchange=()=>{const v=Number(g.value);if(!Number.isFinite(v)||v<0){flourRows();return}const total=flourTotal();if(state.flours.length===1){state.totalFlour=v;state.flours[0].pct=100}else{const other=state.flours.reduce((n,x,j)=>n+(j===i?0:total*x.pct/100),0);const newTotal=v+other;if(newTotal<=0){flourRows();return}state.totalFlour=newTotal;state.flours.forEach((x,j)=>x.pct=(j===i?v:total*x.pct/100)/newTotal*100)}if(state.mode==='target'){state.mode='flour'}prepareSeeds();persist();redraw()};grams.append(g);
-  const pct=document.createElement('span');pct.className='rc2-pct';pct.textContent=fmt(f.pct)+'%';
+  const grams=document.createElement('div');grams.className='flour-grams';
+  const last=i===state.flours.length-1;
+  grams.innerHTML='<label>粉量 g'+(last?' · 自動':'')+'</label>';
+  const g=document.createElement('input');g.type='number';g.min='0';g.step='1';g.inputMode='numeric';
+  g.value=String(c.flours[i].grams);g.setAttribute('aria-label','粉'+(i+1)+'の重量'+(last?'（自動計算）':''));
+  if(last){g.readOnly=true;g.classList.add('auto-flour-grams');g.title='総粉量から他の粉を引いた残りを自動計算します'}
+  else g.onchange=()=>{
+   const v=Math.round(Number(g.value));if(!Number.isFinite(v)||v<0){flourRows();return}
+   const total=Math.max(0,Math.round(flourTotal()));
+   const other=c.flours.slice(0,-1).reduce((n,x,j)=>n+(j===i?0:x.grams),0);
+   const value=Math.min(v,Math.max(0,total-other));
+   if(value!==v)alert('他の粉との合計が総粉量を超えるため、入力できる最大値に調整しました。');
+   const weights=c.flours.map(x=>x.grams);weights[i]=value;weights[weights.length-1]=total-other-value;
+   state.flours.forEach((x,j)=>x.pct=total?weights[j]/total*100:(j===state.flours.length-1?100:0));
+   prepareSeeds();persist();redraw();
+  };
+  grams.append(g);
+  const pct=document.createElement('span');pct.className='rc2-pct';pct.textContent=fmt(c.flours[i].pct)+'%';
   row.append(name,grams,pct);
   if(state.flours.length>1){const del=document.createElement('button');del.className='quiet delete-flour';del.textContent='×';del.setAttribute('aria-label','粉を削除');del.onclick=()=>{state.flours.splice(i,1);const sum=state.flours.reduce((n,x)=>n+x.pct,0);state.flours.forEach(x=>x.pct=sum?x.pct/sum*100:100/state.flours.length);prepareSeeds();persist();redraw()};row.append(del)}
-  if(state.process!=='straight'){const foot=document.createElement('div');foot.className='flour-foot rc2-seed';const label=document.createElement('label');label.textContent='ビガ／ポーリッシュ';const seed=document.createElement('input');seed.type='number';seed.min='0';seed.step='.1';seed.inputMode='decimal';seed.max=String(c.flours[i].grams);seed.value=String(round(f.seed,2));seed.onchange=()=>{f.seed=Math.max(0,Math.min(c.flours[i].grams,Number(seed.value)||0));prepareSeeds();persist();flourRows();results()};foot.append(label,seed,document.createTextNode('g'));row.append(foot)}host.append(row)
+  if(state.process!=='straight'){const foot=document.createElement('div');foot.className='flour-foot rc2-seed';const label=document.createElement('label');label.textContent='ビガ／ポーリッシュ';const seed=document.createElement('input');seed.type='number';seed.min='0';seed.step='1';seed.inputMode='numeric';seed.max=String(c.flours[i].grams);seed.value=String(Math.round(f.seed));seed.onchange=()=>{f.seed=Math.max(0,Math.min(c.flours[i].grams,Math.round(Number(seed.value)||0)));prepareSeeds();persist();flourRows();results()};foot.append(label,seed,document.createTextNode('g'));row.append(foot)}host.append(row)
  });$('addFlour').hidden=state.flours.length>=4;
 }
 
