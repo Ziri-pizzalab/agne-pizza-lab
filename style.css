@@ -43,3 +43,23 @@ h3{font-size:15px;margin:19px 0 10px}.extra-grid{display:grid;grid-template-colu
 .back-to-top[hidden]{display:none!important}
 @media(min-width:560px){#saved .list-tools,#ferment .list-tools{grid-template-columns:minmax(0,1fr) 170px}#saved #recipeList .saved-item{flex-direction:row;align-items:center}#saved #recipeList .saved-item .actions{width:auto;display:flex}}
 @media(max-width:350px){#saved #recipeEditActions{grid-template-columns:minmax(0,1fr)}}
+
+/* Ver.3.0 mobile layout */
+body{padding-bottom:calc(125px + env(safe-area-inset-bottom))}
+header{background:#fbf4f1}
+.method-switch{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;background:#f5e8e9;padding:5px;border-radius:14px;width:100%}
+.method-switch button{min-width:0;padding:12px 3px;border:0;border-radius:10px;background:transparent;color:#77555f;font-size:13px;font-weight:700}
+.method-switch button.active{background:white;color:#a04464;box-shadow:0 1px 7px #6d394520}
+#recipe>.card{margin-bottom:12px}
+.sticky-summary{position:fixed;bottom:env(safe-area-inset-bottom);left:50%;transform:translateX(-50%);width:min(100%,560px);z-index:90;background:#fff8f5;border:1px solid #e9cfd5;border-radius:19px 19px 0 0;box-shadow:0 -4px 25px #5e304028;padding:0 13px 10px;max-height:72dvh;display:flex;flex-direction:column}
+.summary-toggle{background:transparent;border:0;color:#875267;padding:8px 4px;font-size:12px;display:flex;align-items:center;flex-direction:column;gap:5px;min-height:38px}
+.summary-handle{display:block;width:44px;height:4px;border-radius:6px;background:#c9aab5}
+#summaryDetails{overflow:auto;padding:4px 8px 12px}
+#summaryDetails[hidden]{display:none}
+.summary-detail-title{font-weight:700;color:#8d5268;border-bottom:1px solid #ead4db;margin:10px 0 6px;padding-bottom:5px}
+.summary-line{display:flex;justify-content:space-between;padding:5px 2px;font-size:14px}
+.summary-total{border-top:1px solid #e8cbd3;padding:10px 3px 3px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px;font-weight:700}
+.summary-total small{display:block;font-size:10px;font-weight:400;color:#876d74;margin-top:5px;line-height:1.3}
+.summary-total strong{white-space:nowrap;color:#a04464;font-size:24px;font-variant-numeric:tabular-nums}
+.back-to-top{bottom:calc(125px + env(safe-area-inset-bottom))}
+@media(max-width:380px){.summary-total strong{font-size:21px}.summary-total small{font-size:9px}}
