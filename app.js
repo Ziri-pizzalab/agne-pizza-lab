@@ -138,6 +138,13 @@ function stopRecipeEditing(){editingRecipe=null;$('saveRecipe').textContent='こ
 function beginRecipeEditing(){ $('saveRecipe').textContent='別名で保存';const actions=$('recipeEditActions');if(actions)actions.hidden=false;$('recipeEditor').hidden=false }
 // Pizza notebook: saved separately from recipes; no forecasting or photos.
 const NOTES_KEY='ange-v3-notes';
+// Note records are stored independently of recipes.
+let editingNoteId=null;
+function saveNotes(notes){
+ if(!Array.isArray(notes))throw new TypeError('Invalid note data');
+ localStorage.setItem(NOTES_KEY,JSON.stringify(notes));
+}
+
 const dateTimeLocal=d=>{const pad=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes())};
 function durationText(a,b){if(!a||!b)return '日時を入力すると経過時間を表示します';const st=new Date(a),en=new Date(b);if(!Number.isFinite(+st)||!Number.isFinite(+en))return '日時を確認してください';const minutes=Math.round((en-st)/60000);if(minutes<0)return '終了日時が開始日時より前です';const hours=Math.floor(minutes/60),mins=minutes%60,days=Math.floor(hours/24);return '経過：'+(days?days+'日 ':'')+(hours%24||!days?(days?hours%24:hours)+'時間':'')+(mins?' '+mins+'分':'')};
 function refreshNoteRecipes(){const select=$('noteRecipe');if(!select)return;const prev=select.value;select.replaceChildren(new Option('現在の配合（保存済みでなくても可）','current'));for(const [i,r] of savedRecipes().entries()){const key=r._key+'::'+r._i;select.append(new Option(r.name+(r.legacy?'（旧版）':''),key))}if([...select.options].some(o=>o.value===prev))select.value=prev;else select.value='current';noteSeedVisibility()}
