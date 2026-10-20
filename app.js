@@ -67,8 +67,26 @@ function calc(){
  return {totalFlour,flours,seedFlour,seedWater,water,extras,dough,seedYeast,valid,balls:Math.floor((dough+1e-7)/Number(state.ball)),leftover:Math.max(0,dough%Number(state.ball))};
 }
 function slider(host,label,key,min,max,step,unit){
- const wrap=document.createElement('div');wrap.className='control';const top=document.createElement('div');top.className='top';const text=document.createElement('span');text.textContent=label;const out=document.createElement('output');const input=document.createElement('input');input.type='range';Object.assign(input,{min,max,step,value:state[key]});const refresh=()=>out.textContent=fmt(Number(state[key]))+unit;
- input.oninput=()=>{state[key]=Number(input.value);if(key==='totalFlour'||key==='ball'||key==='quantity'||key==='hydration'||key==='salt'||key==='oil')prepareSeeds();refresh();persist();results();if(key==='totalFlour')updateFlourRowsInPlace();else if(['ball','quantity','hydration','salt','oil'].includes(key))updateFlourRowsInPlace()};
+ const wrap=document.createElement('div');wrap.className='control';
+ if(key==='totalFlour')wrap.classList.add('total-flour-control');
+ const top=document.createElement('div');top.className='top';const text=document.createElement('span');text.textContent=label;
+ const out=document.createElement('output');const input=document.createElement('input');input.type='range';
+ Object.assign(input,{min,max,step,value:state[key]});
+ const refresh=()=>out.textContent=fmt(Number(state[key]))+unit;
+ if(key==='totalFlour'){
+  // Keep touch movement light; do the full calculation only after release.
+  const number=document.createElement('input');number.type='number';number.min=String(min);number.max=String(max);number.step='1';number.inputMode='numeric';number.value=String(Math.round(state[key]));number.setAttribute('aria-label','総粉量をグラムで入力');
+  const unitLabel=document.createElement('span');unitLabel.className='total-flour-unit';unitLabel.textContent='g';
+  const numeric=document.createElement('div');numeric.className='total-flour-numeric';numeric.append(number,unitLabel);
+  const apply=value=>{const n=Math.max(Number(min),Math.min(Number(max),Math.round(Number(value))));if(!Number.isFinite(n))return;state.totalFlour=n;input.value=String(n);number.value=String(n);prepareSeeds();persist();updateFlourRowsInPlace();results()};
+  input.addEventListener('input',()=>{number.value=input.value});
+  input.addEventListener('change',()=>apply(input.value));
+  number.addEventListener('change',()=>apply(number.value));
+  const buttons=document.createElement('div');buttons.className='total-flour-stepper';
+  for(const delta of [-1,1]){const b=document.createElement('button');b.type='button';b.className='quiet';b.textContent=delta<0?'− 1g':'＋ 1g';b.onclick=()=>apply(Number(number.value)+delta);buttons.append(b)}
+  top.append(text,numeric);wrap.append(top,input,buttons);$(host).append(wrap);return;
+ }
+ input.oninput=()=>{state[key]=Number(input.value);if(['ball','quantity','hydration','salt','oil'].includes(key))prepareSeeds();refresh();persist();results();if(['ball','quantity','hydration','salt','oil'].includes(key))updateFlourRowsInPlace()};
  top.append(text,out);wrap.append(top,input);$(host).append(wrap);refresh();
 }
 function redraw(){

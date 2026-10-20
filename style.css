@@ -111,3 +111,12 @@ body:not(.recipe-tab-active) .back-to-top{bottom:calc(20px + env(safe-area-inset
 /* RC2.5: compact, touch-friendly new note action */
 #noteNewTab{font-size:19px;letter-spacing:1px;min-height:48px;touch-action:manipulation}
 #noteNewTab.active{background:#fff4f6;color:#a04464}
+
+/* RC2.6: easy-to-control total flour weight */
+.total-flour-control .top{align-items:center}
+.total-flour-numeric{display:flex;align-items:center;gap:5px;color:#a6404a;font-weight:750}
+.total-flour-numeric input[type=number]{width:100px;min-width:0;padding:9px 10px;text-align:right;font-size:20px;font-weight:750;color:#a6404a;font-variant-numeric:tabular-nums}
+.total-flour-unit{font-size:15px}
+.total-flour-control input[type=range]{display:block;height:36px;touch-action:pan-x;cursor:pointer;accent-color:#b74d54}
+.total-flour-stepper{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.total-flour-stepper button{min-height:44px;font-size:16px}
