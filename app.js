@@ -132,6 +132,7 @@ function initNotes(){if(!$('noteStarted').value)$('noteStarted').value=dateTimeL
 const BACKUP_KEYS=['ange-v3-current','ange-v3-adopted','ange-v3-recipes',NOTES_KEY];
 function initBackups(){$('exportBackup').onclick=()=>{const items={};for(const k of BACKUP_KEYS){const s=localStorage.getItem(k);if(s!==null)items[k]=JSON.parse(s)}const json=JSON.stringify({app:'Ange Pizza Lab',formatVersion:1,exportedAt:new Date().toISOString(),items},null,2);const a=document.createElement('a');const url=URL.createObjectURL(new Blob([json],{type:'application/json'}));a.href=url;a.download='Ange_Pizza_Lab_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);$('backupStatus').textContent='バックアップを作成しました。iCloud Driveなどに保存してください'};$('importBackup').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const parsed=JSON.parse(await file.text());if(parsed.app!=='Ange Pizza Lab'||parsed.formatVersion!==1||!parsed.items||typeof parsed.items!=='object'||Object.keys(parsed.items).some(k=>!BACKUP_KEYS.includes(k)))throw Error('形式が異なります');if(!confirm('現在の保存レシピ・仕込み履歴をバックアップ内容で置き換えます。続けますか？'))return;for(const [key,value] of Object.entries(parsed.items))localStorage.setItem(key,JSON.stringify(value));location.reload()}catch(err){$('backupStatus').textContent='復元できません。Ange Pizza Labのバックアップファイルを選んでください'}finally{e.target.value=''}}}
 function selectTab(tab){document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===tab));document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab))}
+$('quickSaveRecipe').onclick=()=>openRecipeModal();
 $('style').onchange=e=>applyPreset(e.target.value);
 $('process').onchange=e=>{state.process=e.target.value;if(state.process==='poolish'&&state.bigaHyd<80)state.bigaHyd=100;if(state.process==='biga'&&state.bigaHyd>80)state.bigaHyd=50;if(state.process!=='straight'&&state.flours.every(f=>f.seed===0))state.flours[0].seed=Math.min(300,flourTotal());normalise();persist();redraw()};
 $('addFlour').onclick=()=>{if(state.flours.length>=4)return;const last=state.flours.at(-1);const newcomer=round(last.pct/2);last.pct=round(last.pct-newcomer);state.flours.push({id:Math.max(...state.flours.map(x=>x.id))+1,name:'',pct:newcomer,seed:0});prepareSeeds();persist();flourRows();results()};
@@ -151,6 +152,16 @@ $('recipeSearch').oninput=()=>{recipeVisible=5;showRecipes()};$('recipeSort').on
 $('noteSearch').oninput=()=>{noteVisible=5;showNotes()};$('noteRatingFilter').onchange=()=>{noteVisible=5;showNotes()};$('moreNotes').onclick=()=>{noteVisible+=5;showNotes()};
 const baseShowRecipes=showRecipes;showRecipes=function(){baseShowRecipes();if(editingRecipe)beginRecipeEditing()};
 $('reset').onclick=()=>{if(confirm('現在の配合だけ初期化しますか？（保存レシピと採用済みプリセットは残ります）')){state=clone(defaults);normalise();persist();redraw()}};
+// Collapsible sections retain their controls and state; first section opens by default.
+document.querySelectorAll('#recipe > .card').forEach((card,index)=>{
+ const heading=card.querySelector(':scope > h2');if(!heading)return;
+ const btn=document.createElement('button');btn.type='button';btn.className='section-fold';btn.textContent=heading.textContent;btn.setAttribute('aria-expanded',String(index===0));
+ heading.replaceWith(btn);
+ const content=document.createElement('div');content.className='section-fold-body';
+ while(btn.nextSibling)content.appendChild(btn.nextSibling);
+ card.appendChild(content);content.hidden=index!==0;
+ btn.onclick=()=>{content.hidden=!content.hidden;btn.setAttribute('aria-expanded',String(!content.hidden))};
+});
 normalise();prepareSeeds();redraw();showRecipes();initNotes();initBackups();
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
@@ -175,3 +186,17 @@ function updateStickySummary(c){
 document.querySelectorAll('[data-process]').forEach(button=>button.addEventListener('click',()=>{const select=$('process');select.value=button.dataset.process;select.dispatchEvent(new Event('change',{bubbles:true}));document.querySelectorAll('[data-process]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button))})}));
 $('summaryToggle').addEventListener('click',()=>{const details=$('summaryDetails');details.hidden=!details.hidden;const expanded=!details.hidden;$('summaryToggle').setAttribute('aria-expanded',String(expanded));$('summaryLabel').textContent=expanded?'材料内訳を閉じる ▼':'材料内訳を見る ▲';});
 updateStickySummary(calc());
+
+// Ver.3.2: optional recipe conditions, saved temperature defaults, evidence-limited fermentation guidance.
+const TEMP_KEY='ange-v3-temp-defaults';
+function temperatureDefaults(){const v=read(TEMP_KEY,{room:24,fridge:4});return {room:Number.isFinite(Number(v.room))?Number(v.room):24,fridge:Number.isFinite(Number(v.fridge))?Number(v.fridge):4}}
+function openRecipeModal(){const d=temperatureDefaults();$('modalRecipeName').value='';$('modalRoom').value=d.room;$('modalFridge').value=d.fridge;$('modalFermentMethod').value='';$('modalRoomHours').value='';$('modalColdHours').value='';$('modalMemo').value='';$('modalError').hidden=true;$('recipeModal').showModal();$('modalRecipeName').focus()}
+function modalNumber(id,min,max){const s=$(id).value.trim();if(!s)return null;const n=Number(s);if(!Number.isFinite(n)||n<min||n>max)throw new Error('入力した温度・時間の範囲を確認してください');return n}
+function saveModalRecipe(skip){try{const name=$('modalRecipeName').value.trim();if(!name)throw new Error('レシピ名を入力してください');const conditions=skip?null:{room:modalNumber('modalRoom',-10,50),fridge:modalNumber('modalFridge',-5,20),method:$('modalFermentMethod').value||null,roomHours:modalNumber('modalRoomHours',0,500),coldHours:modalNumber('modalColdHours',0,500),memo:$('modalMemo').value.trim()};const recipes=read('ange-v3-recipes',[]);recipes.unshift({id:'recipe-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),name,state:currentRecipeData(),conditions,savedAt:new Date().toLocaleDateString('ja-JP')});localStorage.setItem('ange-v3-recipes',JSON.stringify(recipes));$('recipeModal').close();stopRecipeEditing();showRecipes();refreshNoteRecipes();selectTab('saved');$('recipeEditStatus').textContent='✓ レシピを追加しました'}catch(e){$('modalError').hidden=false;$('modalError').textContent=e.message||'保存できませんでした'}}
+$('modalCancel').onclick=()=>$('recipeModal').close();$('modalSave').onclick=()=>saveModalRecipe(false);$('modalSkip').onclick=()=>saveModalRecipe(true);
+$('openTempSettings').onclick=()=>{const d=temperatureDefaults();$('defaultRoom').value=d.room;$('defaultFridge').value=d.fridge;$('tempError').hidden=true;$('tempSettingsModal').showModal()};
+$('tempCancel').onclick=()=>$('tempSettingsModal').close();$('tempSave').onclick=()=>{const r=Number($('defaultRoom').value),f=Number($('defaultFridge').value);if(!$('defaultRoom').value||!$('defaultFridge').value||!Number.isFinite(r)||!Number.isFinite(f)||r< -10||r>50||f< -5||f>20){$('tempError').hidden=false;$('tempError').textContent='室温は-10〜50℃、冷蔵庫は-5〜20℃で設定してください';return}localStorage.setItem(TEMP_KEY,JSON.stringify({room:r,fridge:f}));$('tempSettingsModal').close();renderFermentReference()};
+let referenceMethod='room';
+function renderFermentReference(){const d=temperatureDefaults();document.querySelectorAll('[data-ferment]').forEach(b=>{b.classList.toggle('active',b.dataset.ferment===referenceMethod);b.setAttribute('aria-pressed',String(b.dataset.ferment===referenceMethod))});const temp='設定室温 '+d.room+'℃'+(referenceMethod==='mixed'?' ／ 冷蔵庫 '+d.fridge+'℃':'');let msg='';if(state.process==='poolish'){const pct=Number(state.bigaFlour)>0?Number(state.prefermentYeast)/Number(state.bigaFlour)*100:0;msg='ポーリッシュ：18〜20℃では、インスタントドライイーストを種の粉に対し約0.08%使用する場合12〜16時間、0.28%なら約8時間、0.5%なら約4時間という専門書の目安があります。現在の種用酵母比率は約'+pct.toFixed(2)+'%。条件が一致しない場合は時間を換算できません。'}else if(state.process==='biga'){msg='ビガ種：種の加水率、温度、酵母量で熟成が変化します。現在の配合に対する検証済みの所要時間は未設定です。香り・膨らみ・生地の状態を確認してください。'}else{msg='ストレート法：こね上げ時の生地温度と酵母量によって発酵時間が変わります。現在の配合に対する検証済みの所要時間は未設定です。'}if(referenceMethod==='mixed')msg+=' 冷蔵中も生地はすぐに設定温度まで下がらず、発酵は直ちに止まりません。冷蔵時間を常温時間へ単純換算しないでください。';$('fermentReference').textContent=temp+'。'+msg+'（参考情報であり発酵完了予測ではありません）'}
+document.querySelectorAll('[data-ferment]').forEach(b=>b.onclick=()=>{referenceMethod=b.dataset.ferment;renderFermentReference()});
+const _originalSticky=updateStickySummary;updateStickySummary=function(c){_originalSticky(c);renderFermentReference()};renderFermentReference();
