@@ -194,12 +194,19 @@ function stateNumberControl(host, label, key, min, max, step, unit, integer = fa
 }
 
 function renderBallSizes() {
- const add = $('addBallSize');
- const second = $('secondBallSize');
- add.hidden = state.mode !== 'target' || hasSecondBallSize();
- second.hidden = !hasSecondBallSize();
+ const target = state.mode === 'target';
+ const hasSecond = hasSecondBallSize();
+ $('ballSizeList').hidden = !target;
+ $('ballSizeList').classList.toggle('has-second-size', hasSecond);
+ $('addBallSize').hidden = !target || hasSecond;
+ $('secondBallSize').hidden = !hasSecond;
+ $('firstBallControls').replaceChildren();
  $('secondBallControls').replaceChildren();
- if (!hasSecondBallSize()) return;
+ if (!target) return;
+
+ stateNumberControl('firstBallControls','1玉の重さ','ball',80,400,5,'g',true);
+ stateNumberControl('firstBallControls','玉数','quantity',1,24,1,'個',true);
+ if (!hasSecond) return;
 
  stateNumberControl('secondBallControls','2種類目の1玉の重さ','secondBall',80,400,5,'g',true);
  stateNumberControl('secondBallControls','2種類目の玉数','secondQuantity',1,24,1,'個',true);
@@ -229,9 +236,10 @@ function redraw(){
  $('baseControls').replaceChildren();
  $('ratioControls').replaceChildren();
  $('prefermentControls').replaceChildren();
- if (state.mode === 'flour') stateNumberControl('baseControls','総粉量','totalFlour',100,1800,1,'g',true);
- stateNumberControl('baseControls','1玉の重さ','ball',80,400,5,'g',true);
- if (state.mode === 'target') stateNumberControl('baseControls','玉数','quantity',1,24,1,'個',true);
+ if (state.mode === 'flour') {
+  stateNumberControl('baseControls','総粉量','totalFlour',100,1800,1,'g',true);
+  stateNumberControl('baseControls','1玉の重さ','ball',80,400,5,'g',true);
+ }
  renderBallSizes();
  $('prefermentBox').hidden = state.process === 'straight';
  $('prefermentTitle').textContent = state.process === 'poolish' ? 'ポーリッシュ' : 'ビガ';
@@ -439,10 +447,12 @@ function showRecipes() {
  if ($('recipeSort').value === 'name') matches.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
 
  for (const recipe of matches.slice(0, recipeVisible)) {
-  const item = document.createElement('div');
+  const item = document.createElement('details');
   item.className = 'saved-item';
+  item.setAttribute('name', 'saved-recipes');
   item.classList.toggle('edit-active', editingRecipe !== null && recipeKey(editingRecipe) === recipeKey(recipe));
-  const info = document.createElement('div');
+  const heading = document.createElement('summary');
+  const info = document.createElement('span');
   const name = document.createElement('strong');
   name.textContent = recipe.name + (recipe.legacy ? '（旧版）' : '');
   const summary = document.createElement('small');
@@ -452,12 +462,11 @@ function showRecipes() {
    recipe.savedAt,
   ].filter(Boolean).join(' · ');
   info.append(name, summary);
-  item.append(info);
-  if (recipe.conditions) item.append(recipeConditionDetails(recipe.conditions));
-  const history = listAction('clock', '仕込み履歴');
-  history.classList.add('recipe-history-link');
+  heading.append(info);
+  item.append(heading);
+  const history = listAction('clock', '履歴');
+  history.setAttribute('aria-label', '仕込み履歴');
   history.onclick = () => showRecipeNoteHistory(recipe);
-  item.append(history);
 
   const actions = document.createElement('div');
   actions.className = 'actions';
@@ -494,8 +503,9 @@ function showRecipes() {
    showRecipes();
    refreshNoteRecipes();
   };
-  actions.append(load, edit, remove);
+  actions.append(load, history, edit, remove);
   item.append(actions);
+  if (recipe.conditions) item.append(recipeConditionDetails(recipe.conditions));
   root.append(item);
  }
 
