@@ -463,3 +463,11 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
   .formula-section > summary { font-size: 14px; gap: 6px; padding-inline: 9px; }
   .two-col { grid-template-columns: minmax(0, 1fr); }
 }
+
+#planForm > button.primary { width: 100%; margin-top: 4px; }
+#planFromFormula { margin: 8px 0 0; }
+#backToRecipes { margin-bottom: 8px; }
+#allNoteHistory { margin: 8px 0; }
+.plan-reference { margin: 12px 0; padding: 10px; border-radius: 11px; background: var(--pink); }
+.plan-reference h3 { margin: 0; }
+.plan-reference p:last-of-type { margin-bottom: 3px; }
