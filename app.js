@@ -22,7 +22,7 @@ else if(old&&typeof old==='object'){
 function normalise(){
  state.extras=Array.from({length:2},(_,i)=>({name:String(state.extras?.[i]?.name||''),pct:Math.max(0,Math.min(50,Number(state.extras?.[i]?.pct)||0))}));
  const arr=Array.isArray(state.flours)&&state.flours.length?state.flours.slice(0,4):[{id:1,name:state.flourName||'カプート',pct:100,seed:Number(state.bigaFlour)||0}];
- state.flours=arr.map((f,i)=>({id:Number(f.id)||i+1,name:String(f.name||''),pct:Math.max(0,Number(f.pct)||0),seed:Math.max(0,Number(f.seed)||0)}));
+ state.flours=arr.map((f,i)=>({id:Number(f.id)||i+1,name:String(f.name||''),seedName:String(f.seedName??''),pct:Math.max(0,Number(f.pct)||0),seed:Math.max(0,Number(f.seed)||0)}));
  // Preserve existing proportions, but always make the last flour the 100% remainder.
  if(state.flours.length===1)state.flours[0].pct=100;
  else{let used=0;for(let i=0;i<state.flours.length-1;i++){state.flours[i].pct=round(Math.min(state.flours[i].pct,100-used),8);used+=state.flours[i].pct}state.flours.at(-1).pct=round(100-used,8)}
@@ -218,6 +218,22 @@ function updateFlourRowsInPlace() {
  for (const sync of syncFlourRows) sync();
 }
 
+function flourNameField(flour, key, label, placeholder) {
+ const field = document.createElement('label');
+ field.className = 'field flour-name-field';
+ field.textContent = label;
+ const input = document.createElement('input');
+ input.value = flour[key] ?? '';
+ input.placeholder = placeholder;
+ input.oninput = () => {
+  flour[key] = input.value;
+  persist();
+  results();
+ };
+ field.append(input);
+ return field;
+}
+
 function flourRows() {
  const host = $('flourRows');
  host.replaceChildren();
@@ -227,14 +243,11 @@ function flourRows() {
   const title = '粉 ' + (index + 1);
   const header = document.createElement('div');
   header.className = 'formula-flour-header';
-  const name = document.createElement('input');
-  name.value = flour.name;
-  name.placeholder = '粉の名前';
-  name.setAttribute('aria-label', title + 'の名前');
-  name.oninput = () => { flour.name = name.value; persist(); results(); };
+  const heading = document.createElement('strong');
+  heading.textContent = title;
   const ratio = document.createElement('span');
   ratio.className = 'formula-flour-ratio';
-  header.append(name, ratio);
+  header.append(heading, ratio);
   if (state.flours.length > 1) {
    const remove = document.createElement('button');
    remove.className = 'quiet';
@@ -254,7 +267,7 @@ function flourRows() {
   const label = document.createElement('span');
   label.className = 'formula-control-label';
   const automatic = index === state.flours.length - 1;
-  label.textContent = automatic ? '粉量（自動）' : '粉量';
+  label.textContent = automatic ? '粉の合計（自動）' : '粉の合計';
   quantity.append(label);
 
   const remaining = () => {
@@ -286,8 +299,11 @@ function flourRows() {
    syncWeight = weight.sync;
   }
   row.append(quantity);
+  const straight = state.process === 'straight';
+  const mainName = flourNameField(flour, 'name', straight ? '使う粉の名前' : '本捏ねの粉の名前', '例：カプート');
   let seed;
-  if (state.process !== 'straight') {
+  let mainAmount;
+  if (!straight) {
    seed = numberStepper({
     label:title + 'の発酵種に使う粉量', unit:'g', step:1, integer:true,
     max:() => calc().flours[index].grams,
@@ -297,20 +313,43 @@ function flourRows() {
      prepareSeeds(); persist(); updateFlourRowsInPlace(); results();
     },
    });
-   const seedRow = document.createElement('div');
-   seedRow.className = 'formula-control formula-flour-quantity';
+   const seedGroup = document.createElement('div');
+   seedGroup.className = 'flour-phase flour-phase-seed';
+   const seedName = flourNameField(flour, 'seedName', '発酵種の粉の名前', '空欄なら本捏ねと同じ');
+   const seedWeight = document.createElement('div');
+   seedWeight.className = 'formula-control formula-flour-quantity';
    const seedLabel = document.createElement('span');
    seedLabel.className = 'formula-control-label';
-   seedLabel.textContent = '発酵種に使う粉';
-   seedRow.append(seedLabel, seed.control);
-   row.append(seedRow);
+   seedLabel.textContent = '発酵種の粉量';
+   seedWeight.append(seedLabel, seed.control);
+   seedGroup.append(seedName, seedWeight);
+   row.append(seedGroup);
+
+   const mainGroup = document.createElement('div');
+   mainGroup.className = 'flour-phase';
+   const mainWeight = document.createElement('div');
+   mainWeight.className = 'formula-control formula-flour-quantity';
+   const mainLabel = document.createElement('span');
+   mainLabel.className = 'formula-control-label';
+   mainLabel.textContent = '本捏ねの粉量（自動）';
+   mainAmount = document.createElement('output');
+   mainAmount.className = 'formula-auto-weight';
+   mainAmount.setAttribute('aria-label', title + 'の本捏ねの粉量');
+   mainWeight.append(mainLabel, mainAmount);
+   mainGroup.append(mainName, mainWeight);
+   row.append(mainGroup);
+  } else {
+   row.append(mainName);
   }
   host.append(row);
   return () => {
    const {grams, pct} = calc().flours[index];
    ratio.textContent = fmt(pct) + '%';
    syncWeight(grams);
-   seed?.sync();
+   if (seed) {
+    seed.sync();
+    mainAmount.textContent = fmt(grams - flour.seed) + 'g';
+   }
   };
  });
  updateFlourRowsInPlace();
@@ -360,7 +399,7 @@ function showRecipes() {
  const query = $('recipeSearch').value.trim().toLocaleLowerCase();
  const matches = savedRecipes().filter(recipe => {
   const data = recipe.state || {};
-  const flours = (data.flours || []).map(flour => flour.name).join(' ');
+  const flours = (data.flours || []).flatMap(flour => [flour.name, flour.seedName]).join(' ');
   const process = processLabels[data.process];
   return [recipe.name, flours, process, data.hydration, recipe.savedAt]
    .join(' ').toLocaleLowerCase().includes(query);
@@ -487,7 +526,7 @@ function saveNotes(notes){
 const dateTimeLocal=d=>{const pad=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes())};
 function durationText(a,b){if(!a||!b)return '日時を入力すると経過時間を表示します';const st=new Date(a),en=new Date(b);if(!Number.isFinite(+st)||!Number.isFinite(+en))return '日時を確認してください';const minutes=Math.round((en-st)/60000);if(minutes<0)return '終了日時が開始日時より前です';const hours=Math.floor(minutes/60),mins=minutes%60,days=Math.floor(hours/24);return '経過：'+(days?days+'日 ':'')+(hours%24||!days?(days?hours%24:hours)+'時間':'')+(mins?' '+mins+'分':'')};
 function refreshNoteRecipes(){const select=$('noteRecipe');if(!select)return;const prev=select.value;select.replaceChildren(new Option('現在の配合','current'));for(const [i,r] of savedRecipes().entries()){const key=r._key+'::'+r._i;select.append(new Option(r.name+(r.legacy?'（旧版）':''),key))}if([...select.options].some(o=>o.value===prev))select.value=prev;else select.value='current';noteSeedVisibility()}
-function pickedRecipe(){const key=$('noteRecipe').value;if(key==='current')return {name:state.flours.map(f=>f.name).filter(Boolean).join('＋')+'・'+fmt(state.hydration)+'%・'+{biga:'ビガ法',straight:'ストレート法',poolish:'ポーリッシュ法'}[state.process],snapshot:clone(state)};const r=savedRecipes().find(r=>r._key+'::'+r._i===key);return r?{name:r.name,snapshot:clone(r.state||{})}: {name:'現在の配合',snapshot:clone(state)}}
+function pickedRecipe(){const key=$('noteRecipe').value;if(key==='current')return {name:flourAmounts(calc()).map(([name])=>name).filter(Boolean).join('＋')+'・'+fmt(state.hydration)+'%・'+{biga:'ビガ法',straight:'ストレート法',poolish:'ポーリッシュ法'}[state.process],snapshot:clone(state)};const r=savedRecipes().find(r=>r._key+'::'+r._i===key);return r?{name:r.name,snapshot:clone(r.state||{})}: {name:'現在の配合',snapshot:clone(state)}}
 function noteSeedVisibility(){const selected=pickedRecipe();const process=selected.snapshot.process||'biga';$('noteSeedBlock').hidden=process==='straight'}
 function updateDurations(){for(const [id,out] of [['noteSeedHours','noteSeedDuration'],['noteMatureHours','noteMatureDuration']]){const v=$(id).value;$(out).textContent=v!==''?('設定：'+Number(v)+'時間'):'未設定'}}
 function noteInputs(){const ids=['noteStarted','noteTemp','noteHumidity','noteMethod','noteSeedHours','noteMatureHours','noteRating','noteMemo'];return Object.fromEntries(ids.map(k=>[k,$(k).value]))}
@@ -638,6 +677,24 @@ $('reset').onclick=()=>{$('settingsMenu').open=false;if(confirm('現在の配合
 normalise();prepareSeeds();redraw();showRecipes();initNotes();initBackups();
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
+function flourAmounts(calculated) {
+ const byName = new Map();
+ const add = (name, phase, grams) => {
+  if (grams <= 0) return;
+  const amounts = byName.get(name) ?? {seed:0, main:0};
+  amounts[phase] += grams;
+  byName.set(name, amounts);
+ };
+ for (const flour of calculated.flours) {
+  const mainName = flour.name.trim();
+  const seedName = flour.seedName?.trim() || mainName;
+  const seed = calculated.seedFlour > 0 ? flour.seed : 0;
+  add(seedName, 'seed', seed);
+  add(mainName, 'main', flour.grams - seed);
+ }
+ return Array.from(byName, ([name, {seed, main}]) => [name, seed, main, seed + main]);
+}
+
 function updateStickySummary(c) {
  $('summaryWeight').textContent = c.valid ? fmt(c.dough) + 'g' : '—';
  $('summaryIngredients').hidden = c.valid;
@@ -649,10 +706,7 @@ function updateStickySummary(c) {
  if (c.valid) {
   const rows = [
    ['粉 合計', c.seedFlour, c.totalFlour - c.seedFlour, c.totalFlour],
-   ...c.flours.map(flour => {
-    const seed = straight ? 0 : flour.seed;
-    return [flour.name || '名称未設定', seed, flour.grams - seed, flour.grams];
-   }),
+   ...flourAmounts(c).map(([name, seed, main, total]) => [name || '名称未設定', seed || null, main || null, total]),
    ['水', c.seedWater, c.water - c.seedWater, c.water],
    ['塩', null, c.totalFlour * Number(state.salt) / 100, c.totalFlour * Number(state.salt) / 100],
    ['イースト', c.seedYeast, Number(state.yeast) - c.seedYeast, Number(state.yeast)],
