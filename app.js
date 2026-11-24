@@ -1249,13 +1249,31 @@ $('modalSkip').onclick = () => saveModalRecipe(true);
 $('openTempSettings').onclick=()=>{$('settingsMenu').open=false;const d=temperatureDefaults();$('defaultRoom').value=d.room;$('defaultFridge').value=d.fridge;$('tempError').hidden=true;$('tempSettingsModal').showModal()};
 $('tempCancel').onclick=()=>$('tempSettingsModal').close();$('tempSave').onclick=()=>{const r=Number($('defaultRoom').value),f=Number($('defaultFridge').value);if(!$('defaultRoom').value||!$('defaultFridge').value||!Number.isFinite(r)||!Number.isFinite(f)||r< -10||r>50||f< -5||f>20){$('tempError').hidden=false;$('tempError').textContent='室温は-10〜50℃、冷蔵庫は-5〜20℃で設定してください';return}localStorage.setItem(TEMP_KEY,JSON.stringify({room:r,fridge:f}));$('tempSettingsModal').close();renderFermentReference()};
 let referenceMethod='room';
-function renderFermentReference(){
- const d=temperatureDefaults();document.querySelectorAll('[data-ferment]').forEach(b=>{b.classList.toggle('active',b.dataset.ferment===referenceMethod);b.setAttribute('aria-pressed',String(b.dataset.ferment===referenceMethod))});
- const method={biga:'ビガ法',poolish:'ポーリッシュ法',straight:'ストレート法'}[state.process];
- const cold=referenceMethod==='mixed'?'<span>冷蔵庫 <b>'+d.fridge+'℃</b></span>':'<span>冷蔵庫 <b>使用なし</b></span>';
- const details=state.process==='poolish'?'<details><summary>参考データを見る</summary><div class="ref-table"><span>18〜20℃・種粉に対するドライ酵母</span><div>0.08% <b>12〜16時間</b></div><div>0.28% <b>約8時間</b></div><div>0.5% <b>約4時間</b></div><small>一般的な参考例。現在の配合の予測ではありません。</small></div></details>':'<details><summary>参考情報を見る</summary><p class="note">温度・加水率・酵母量・生地の状態によって発酵時間は変わります。</p></details>';
- $('fermentReference').innerHTML='<div class="ref-method">'+method+'</div><div class="ref-temps"><span>室温 <b>'+d.room+'℃</b></span>'+cold+'</div><div class="ref-result"><small>現在の配合での参考時間</small><strong>算出対象外</strong><span>現在の条件に一致する検証データがありません。</span></div>'+details+(referenceMethod==='mixed'?'<p class="ref-caution">冷蔵しても発酵はすぐには止まりません。</p>':'');
+function renderFermentReference() {
+ const plan = read(PLAN_KEY,null);
+ const defaults = temperatureDefaults();
+ const usesPlan = plan?.method === 'room' || plan?.method === 'mixed';
+ const method = usesPlan ? plan.method : referenceMethod;
+ const room = usesPlan && plan.room !== '' && Number.isFinite(Number(plan.room)) ? Number(plan.room) : defaults.room;
+ const fridge = usesPlan && plan.fridge !== '' && Number.isFinite(Number(plan.fridge)) ? Number(plan.fridge) : defaults.fridge;
+ $('referenceMethodSwitch').hidden = usesPlan;
+ for (const button of document.querySelectorAll('[data-ferment]')) {
+  const active = button.dataset.ferment === method;
+  button.classList.toggle('active', active);
+  button.setAttribute('aria-pressed', String(active));
+ }
+ const process = processLabels[state.process] + '法';
+ const cold = method === 'mixed'
+  ? '<span>冷蔵庫 <b>' + fridge + '℃</b></span>'
+  : '<span>冷蔵庫 <b>使用なし</b></span>';
+ const source = usesPlan ? '仕込み予定の温度' : '温度の初期設定';
+ const details = state.process === 'poolish' ? '<details><summary>参考データを見る</summary><div class="ref-table"><span>18〜20℃・種粉に対するドライ酵母</span><div>0.08% <b>12〜16時間</b></div><div>0.28% <b>約8時間</b></div><div>0.5% <b>約4時間</b></div><small>一般的な参考例。現在の配合の予測ではありません。</small></div></details>' : '<details><summary>参考情報を見る</summary><p class="note">温度・加水率・酵母量・生地の状態によって発酵時間は変わります。</p></details>';
+ $('fermentReference').innerHTML = '<div class="ref-method">' + process + ' ／ ' + source + '</div>' +
+  '<div class="ref-temps"><span>室温 <b>' + room + '℃</b></span>' + cold + '</div>' +
+  '<div class="ref-result"><small>現在の配合での参考時間</small><strong>算出対象外</strong><span>現在の条件に一致する検証データがありません。</span></div>' +
+  details + (method === 'mixed' ? '<p class="ref-caution">冷蔵しても発酵はすぐには止まりません。</p>' : '');
 }
+
 document.querySelectorAll('[data-ferment]').forEach(b=>b.onclick=()=>{referenceMethod=b.dataset.ferment;renderFermentReference()});
 const _originalSticky = updateStickySummary;
 updateStickySummary = function(c) {
@@ -1408,7 +1426,10 @@ function initPreparationPlan() {
   try { localStorage.setItem(PLAN_KEY, JSON.stringify(values)); }
   catch { $('planStatus').textContent = '仕込み予定を保存できませんでした。'; return; }
   if (state.process !== planProcess) changeFormulaProcess(planProcess);
-  else renderPlanReference(calc());
+  else {
+   renderFermentReference();
+   renderPlanReference(calc());
+  }
   selectTab('recipe');
   $('planFromFormula').focus();
  };
