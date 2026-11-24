@@ -487,8 +487,8 @@ function recipeConditionDetails(conditions) {
   fermentationMethods[conditions.method],
   conditions.room != null ? '室温 ' + conditions.room + '℃' : '',
   conditions.fridge != null ? '冷蔵庫 ' + conditions.fridge + '℃' : '',
-  conditions.roomHours != null ? '常温 ' + conditions.roomHours + '時間' : '',
-  conditions.coldHours != null ? '冷蔵 ' + conditions.coldHours + '時間' : '',
+  conditions.roomHours != null ? '常温 ' + fermentationDurationLabel(conditions.roomHours) : '',
+  conditions.coldHours != null ? '冷蔵 ' + fermentationDurationLabel(conditions.coldHours, true) : '',
  ].filter(Boolean);
  detail.append(heading);
  if (values.length) {
@@ -754,8 +754,48 @@ for (const id of ['newRecipeConditions', 'editRecipeConditions']) {
 
 function fillRecipeConditions(id, values) {
  for (const field of $(id).querySelectorAll('[data-condition]')) {
-  field.value = values?.[field.dataset.condition] ?? '';
+  const value = values?.[field.dataset.condition] ?? '';
+  if (field.dataset.duration) fillFermentationTimes(field, value);
+  else field.value = value;
  }
+}
+
+function fermentationDurationLabel(value, useDays = false) {
+ const hours = Number(value);
+ if (useDays && hours >= 24) {
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  if (!rest) return days + '日';
+  if (rest === 12) return days + '日半';
+  return days + '日' + fermentationDurationLabel(rest);
+ }
+ const minutes = round(hours * 60, 8);
+ if (!Number.isInteger(minutes)) return hours + '時間';
+ const wholeHours = Math.floor(minutes / 60);
+ const rest = minutes % 60;
+ if (!wholeHours) return rest + '分';
+ return wholeHours + '時間' + (rest ? rest + '分' : '');
+}
+
+function fillFermentationTimes(field, value) {
+ const cold = field.dataset.duration === 'cold';
+ const wholeHours = Array.from({length: cold ? 23 : 24}, (_, i) => i + 1);
+ const short = [5, 10, 15, 20, 30, 45].map(minutes => minutes / 60);
+ const hours = cold ? wholeHours : [...wholeHours, 1.5, 2.5, 3.5, 30, 36, 48].sort((a, b) => a - b);
+ const days = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 10, 14, 20].map(days => 24 * days);
+ const groups = cold ? [['日数', days], ['時間', hours], ['分', short]] : [['分', short], ['時間', hours]];
+ const selected = value === '' ? '' : String(Number(value));
+ field.replaceChildren(new Option('未設定', ''));
+ for (const [label, durations] of groups) {
+  const group = document.createElement('optgroup');
+  group.label = label;
+  for (const duration of durations) group.append(new Option(fermentationDurationLabel(duration, cold), String(duration)));
+  field.append(group);
+ }
+ if (selected && !Array.from(field.options).some(option => option.value === selected)) {
+  field.append(new Option(fermentationDurationLabel(value, cold) + '（保存済み）', selected));
+ }
+ field.value = selected;
 }
 
 function readRecipeConditions(id) {
@@ -763,11 +803,15 @@ function readRecipeConditions(id) {
  for (const field of $(id).querySelectorAll('[data-condition]')) {
   const key = field.dataset.condition;
   const value = field.value.trim();
-  if (field.type === 'number') {
+  if (field.dataset.duration) {
+   const hours = Number(value);
+   if (value && (!Number.isFinite(hours) || hours < 0 || hours > 500)) throw new Error('発酵時間を確認してください');
+   conditions[key] = value === '' ? null : hours;
+  } else if (field.type === 'number') {
    const number = Number(value);
    if (field.validity.badInput || (value !== '' && (!Number.isFinite(number) ||
     number < Number(field.min) || number > Number(field.max)))) {
-    throw new Error('入力した温度・時間の範囲を確認してください');
+    throw new Error('入力した温度の範囲を確認してください');
    }
    conditions[key] = value === '' ? null : number;
   } else {
