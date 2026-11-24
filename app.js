@@ -974,7 +974,18 @@ $('quickSaveRecipe').onclick = () => {
  openRecipeModal();
 };
 $('style').onchange=e=>applyPreset(e.target.value);
-$('process').onchange=e=>{state.process=e.target.value;if(state.process==='poolish'&&state.bigaHyd<80)state.bigaHyd=100;if(state.process==='biga'&&state.bigaHyd>80)state.bigaHyd=50;if(state.process!=='straight'&&state.flours.every(f=>f.seed===0))state.flours[0].seed=Math.min(300,flourTotal());normalise();persist();redraw()};
+function changeFormulaProcess(process) {
+ state.process = process;
+ if (process === 'poolish' && state.bigaHyd < 80) state.bigaHyd = 100;
+ if (process === 'biga' && state.bigaHyd > 80) state.bigaHyd = 50;
+ if (process !== 'straight' && state.flours.every(flour => flour.seed === 0)) {
+  state.flours[0].seed = Math.min(300,flourTotal());
+ }
+ normalise();
+ persist();
+ redraw();
+}
+$('process').onchange = event => changeFormulaProcess(event.target.value);
 $('addFlour').onclick=()=>{if(state.flours.length>=4)return;const last=state.flours.at(-1);const newcomer=round(last.pct/2);last.pct=round(last.pct-newcomer);state.flours.push({id:Math.max(...state.flours.map(x=>x.id))+1,name:'',pct:newcomer,seed:0});prepareSeeds();persist();flourRows();results()};
 for(const button of document.querySelectorAll('[data-mode]'))button.onclick=()=>{if(state.mode==='target'&&button.dataset.mode==='flour'){const c=calc();state.totalFlour=Math.max(0,round(c.totalFlour))}state.mode=button.dataset.mode;prepareSeeds();persist();redraw()};
 $('yeastType').onchange=e=>{const next=e.target.value;if(next!==state.yeastType){const factor=next==='fresh'?3:1/3;state.yeast=round(state.yeast*factor);state.prefermentYeast=round(state.prefermentYeast*factor);state.yeastType=next;persist();redraw()}};
@@ -1282,17 +1293,26 @@ const planFields = {
  method:'planMethod', fridge:'planFridge', coldHours:'planColdHours', main:'planMain',
 };
 
+let planProcess;
+const planProcessButtons = document.querySelectorAll('[data-plan-process]');
+
 function updatePlanFields() {
+ for (const button of planProcessButtons) {
+  const selected = button.dataset.planProcess === planProcess;
+  button.classList.toggle('active', selected);
+  button.setAttribute('aria-pressed', String(selected));
+ }
  const mixed = $('planMethod').value === 'mixed';
  $('planColdFields').hidden = !mixed;
  for (const id of ['planFridge', 'planColdHours']) {
   $(id).disabled = !mixed;
   $(id).required = mixed;
  }
- const direct = state.process === 'straight';
+ const direct = planProcess === 'straight';
+ $('planStartLabel').textContent = direct ? '捏ね始め' : processLabels[planProcess] + 'の仕込み開始';
  $('planMainField').hidden = direct;
  $('planMain').disabled = direct;
- $('planMethodHint').textContent = direct ? '' : processLabels[state.process] + 'の種を仕込む日時を、捏ね始めに入れてください。';
+ $('planColdLabel').textContent = direct ? '冷蔵する時間' : '本捏ね後の冷蔵時間';
 }
 
 function preparationWindows(plan, process) {
@@ -1303,9 +1323,9 @@ function preparationWindows(plan, process) {
  const total = (bake - start) / 3600000;
  const seed = main === null ? null : (main - start) / 3600000;
  const cold = plan.method === 'mixed' ? Number(plan.coldHours) : 0;
- if (!Number.isFinite(total) || total <= 0) return {error:'焼き始めを捏ね始めより後に設定してください。'};
+ if (!Number.isFinite(total) || total <= 0) return {error:'焼き始めを仕込み開始より後に設定してください。'};
  if (seed !== null && (!Number.isFinite(seed) || seed <= 0 || seed >= total)) {
-  return {error:'本捏ねは、捏ね始めと焼き始めの間に設定してください。'};
+  return {error:'本捏ねは、種の仕込み開始と焼き始めの間に設定してください。'};
  }
  if (!Number.isFinite(cold) || cold < 0 || (plan.method === 'mixed' && (!cold || cold > total - (seed ?? 0)))) {
   return {error:'冷蔵時間を本捏ねから焼くまでの範囲で設定してください。'};
@@ -1331,7 +1351,10 @@ function renderPlanReference(calculated) {
  $('planReference').hidden = !plan;
  $('planFromFormula').hidden = !plan;
  if (!plan) return;
- const windows = preparationWindows(plan, state.process);
+ const mismatch = plan.process && plan.process !== state.process;
+ const windows = mismatch
+  ? {error:'配合の製法が変わりました。仕込み予定で製法を確認してください。'}
+  : preparationWindows(plan, state.process);
  $('planReferenceSource').hidden = true;
  if (windows.error) {
   $('planFormulaWindow').textContent = '仕込み予定を見直す';
@@ -1361,6 +1384,12 @@ function renderPlanReference(calculated) {
 function initPreparationPlan() {
  const defaults = temperatureDefaults();
  const plan = read(PLAN_KEY, null) ?? {start:dateTimeLocal(new Date()), room:defaults.room, fridge:defaults.fridge, method:'room'};
+ planProcess = Object.keys(processLabels).includes(plan.process) ? plan.process : state.process;
+ for (const button of planProcessButtons) button.onclick = () => {
+  planProcess = button.dataset.planProcess;
+  $('planStatus').textContent = '';
+  updatePlanFields();
+ };
  fillFermentationTimes($('planColdHours'), plan.coldHours ?? '');
  for (const [key,id] of Object.entries(planFields)) $(id).value = plan[key] ?? '';
  $('planForm').addEventListener('input', () => { $('planStatus').textContent = ''; });
@@ -1369,15 +1398,17 @@ function initPreparationPlan() {
  $('planForm').onsubmit = event => {
   event.preventDefault();
   const values = Object.fromEntries(Object.entries(planFields).map(([key,id]) => [key,$(id).value]));
-  if (state.process === 'straight') values.main = '';
-  const windows = preparationWindows(values, state.process);
+  values.process = planProcess;
+  if (planProcess === 'straight') values.main = '';
+  const windows = preparationWindows(values, planProcess);
   if (windows.error) {
    $('planStatus').textContent = windows.error;
    return;
   }
   try { localStorage.setItem(PLAN_KEY, JSON.stringify(values)); }
   catch { $('planStatus').textContent = '仕込み予定を保存できませんでした。'; return; }
-  renderPlanReference(calc());
+  if (state.process !== planProcess) changeFormulaProcess(planProcess);
+  else renderPlanReference(calc());
   selectTab('recipe');
   $('planFromFormula').focus();
  };
