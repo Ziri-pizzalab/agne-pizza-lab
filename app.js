@@ -106,10 +106,44 @@ function numberStepper({label, unit, readValue, writeValue, min = 0, max, step, 
   button.className = 'quiet';
   button.textContent = direction < 0 ? '−' : '＋';
   button.setAttribute('aria-label', label + 'を' + step + unit + (direction < 0 ? '減らす' : '増やす'));
-  button.onclick = () => {
+  const advance = () => {
+   const before = Number(readValue());
    const pending = typedValue();
-   const value = Number.isFinite(pending) ? pending : Number(readValue());
+   const value = Number.isFinite(pending) ? pending : before;
    setValue(round(value + direction * step, 8));
+   return Number(readValue()) !== before;
+  };
+  let pointer = null;
+  let repeatTimer;
+  let repeats = 0;
+  const stopRepeat = event => {
+   if (event && event.pointerId !== pointer) return;
+   clearTimeout(repeatTimer);
+   pointer = null;
+  };
+  const repeat = () => {
+   if (!button.isConnected || document.hidden) {
+    stopRepeat();
+    return;
+   }
+   repeats++;
+   if (advance()) repeatTimer = setTimeout(repeat, repeats < 7 ? 125 : 65);
+  };
+  button.onpointerdown = event => {
+   if (!event.isPrimary || event.button !== 0 || pointer !== null) return;
+   pointer = event.pointerId;
+   repeats = 0;
+   repeatTimer = setTimeout(repeat, 380);
+  };
+  button.onpointerup = button.onpointercancel = button.onpointerleave = button.onlostpointercapture = stopRepeat;
+  button.oncontextmenu = event => event.preventDefault();
+  button.onclick = event => {
+   // A long press already changed the value before the release click.
+   if (repeats && event?.detail !== 0) {
+    repeats = 0;
+    return;
+   }
+   advance();
   };
   return button;
  });

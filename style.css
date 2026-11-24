@@ -213,7 +213,14 @@ main { padding-block: 12px 16px; }
 }
 .formula-control-label { font-size: 14px; font-weight: 650; }
 .number-stepper { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 4px; }
-.number-stepper button.quiet { min-height: 44px; padding: 0; font-size: 20px; }
+.number-stepper button.quiet {
+  min-height: 44px;
+  padding: 0;
+  font-size: 20px;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
 .number-stepper-value {
   display: flex;
   align-items: center;
