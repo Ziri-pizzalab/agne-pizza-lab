@@ -66,111 +66,385 @@ function calc(){
  const valid=totalFlour>0&&Number.isFinite(dough)&&water+1e-8>=seedWater&&seedYeast>=0&&seedYeast<=Number(state.yeast)&&flours.every(f=>f.seed>=0&&f.seed<=f.grams+1e-7)&&seedFlour<=totalFlour+1e-7;
  return {totalFlour,flours,seedFlour,seedWater,water,extras,dough,seedYeast,valid,balls:Math.floor((dough+1e-7)/Number(state.ball)),leftover:Math.max(0,dough%Number(state.ball))};
 }
-function slider(host,label,key,min,max,step,unit){
- const wrap=document.createElement('div');wrap.className='control';
- if(key==='totalFlour')wrap.classList.add('total-flour-control');
- const top=document.createElement('div');top.className='top';const text=document.createElement('span');text.textContent=label;
- const out=document.createElement('output');const input=document.createElement('input');input.type='range';
- Object.assign(input,{min,max,step,value:state[key]});
- const refresh=()=>out.textContent=fmt(Number(state[key]))+unit;
- if(key==='totalFlour'){
-  // Keep touch movement light; do the full calculation only after release.
-  const number=document.createElement('input');number.type='number';number.min=String(min);number.max=String(max);number.step='1';number.inputMode='numeric';number.value=String(Math.round(state[key]));number.setAttribute('aria-label','総粉量をグラムで入力');
-  const unitLabel=document.createElement('span');unitLabel.className='total-flour-unit';unitLabel.textContent='g';
-  const numeric=document.createElement('div');numeric.className='total-flour-numeric';numeric.append(number,unitLabel);
-  const apply=value=>{const n=Math.max(Number(min),Math.min(Number(max),Math.round(Number(value))));if(!Number.isFinite(n))return;state.totalFlour=n;input.value=String(n);number.value=String(n);prepareSeeds();persist();updateFlourRowsInPlace();results()};
-  input.addEventListener('input',()=>{number.value=input.value});
-  input.addEventListener('change',()=>apply(input.value));
-  number.addEventListener('change',()=>apply(number.value));
-  const buttons=document.createElement('div');buttons.className='total-flour-stepper';
-  for(const delta of [-1,1]){const b=document.createElement('button');b.type='button';b.className='quiet';b.textContent=delta<0?'− 1g':'＋ 1g';b.onclick=()=>apply(Number(number.value)+delta);buttons.append(b)}
-  top.append(text,numeric);wrap.append(top,input,buttons);$(host).append(wrap);return;
- }
- input.oninput=()=>{state[key]=Number(input.value);if(['ball','quantity','hydration','salt','oil'].includes(key))prepareSeeds();refresh();persist();results();if(['ball','quantity','hydration','salt','oil'].includes(key))updateFlourRowsInPlace()};
- top.append(text,out);wrap.append(top,input);$(host).append(wrap);refresh();
+function numberStepper({label, unit, readValue, writeValue, min = 0, max, step, integer = false}) {
+ const control = document.createElement('div');
+ control.className = 'number-stepper';
+ const field = document.createElement('label');
+ field.className = 'number-stepper-value';
+ const input = document.createElement('input');
+ input.type = 'number';
+ input.inputMode = integer ? 'numeric' : 'decimal';
+ input.step = integer ? '1' : 'any';
+ input.setAttribute('aria-label', label + '（' + unit + '）');
+ const unitLabel = document.createElement('span');
+ unitLabel.textContent = unit;
+ unitLabel.setAttribute('aria-hidden', 'true');
+ field.append(input, unitLabel);
+
+ const limit = typeof max === 'function' ? max : () => max;
+ const sync = () => {
+  input.min = String(min);
+  input.max = String(limit());
+  input.value = String(readValue());
+ };
+ const setValue = value => {
+  if (Number.isFinite(value)) {
+   const bounded = Math.max(min, Math.min(limit(), integer ? Math.round(value) : value));
+   writeValue(bounded);
+  }
+  sync();
+ };
+ const typedValue = () => input.value.trim() === '' || input.validity.badInput ? NaN : Number(input.value);
+ input.onchange = () => setValue(typedValue());
+ input.onkeydown = event => {
+  if (event.key === 'Enter') input.blur();
+  if (event.key === 'Escape') { sync(); input.blur(); }
+ };
+ const buttons = [-1, 1].map(direction => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'quiet';
+  button.textContent = direction < 0 ? '−' : '＋';
+  button.setAttribute('aria-label', label + 'を' + step + unit + (direction < 0 ? '減らす' : '増やす'));
+  button.onclick = () => {
+   const pending = typedValue();
+   const value = Number.isFinite(pending) ? pending : Number(readValue());
+   setValue(round(value + direction * step, 8));
+  };
+  return button;
+ });
+ control.append(buttons[0], field, buttons[1]);
+ sync();
+ return {control, sync};
 }
+
+function appendNumberControl(host, label, options) {
+ const wrapper = document.createElement('div');
+ wrapper.className = 'formula-control';
+ const title = document.createElement('span');
+ title.className = 'formula-control-label';
+ title.textContent = label;
+ const stepper = numberStepper({label, ...options});
+ wrapper.append(title, stepper.control);
+ $(host).append(wrapper);
+ return stepper.sync;
+}
+
+function stateNumberControl(host, label, key, min, max, step, unit, integer = false) {
+ appendNumberControl(host, label, {
+  unit, min, max, step, integer,
+  readValue: () => state[key],
+  writeValue(value) {
+   state[key] = value;
+   if (key !== 'bigaHyd') prepareSeeds();
+   persist();
+   updateFlourRowsInPlace();
+   results();
+  },
+ });
+}
+
 function redraw(){
  $('style').replaceChildren();for(const [k,p] of Object.entries(presets)){const o=document.createElement('option');o.value=k;o.textContent=p.name;$('style').append(o)}
  $('style').value=state.style;$('process').value=state.process;document.querySelectorAll('[data-process]').forEach(b=>{const active=b.dataset.process===state.process;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active))});$('yeastType').value=state.yeastType;
  $('styleSource').replaceChildren(document.createTextNode(presets[state.style].source+' '));if(presets[state.style].url){const a=document.createElement('a');a.textContent='参考元';a.href=presets[state.style].url;a.target='_blank';a.rel='noopener';$('styleSource').append(a)}
- document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===state.mode));
- $('baseControls').replaceChildren();$('ratioControls').replaceChildren();$('prefermentControls').replaceChildren();
- if(state.mode==='flour'){slider('baseControls','総粉量','totalFlour',100,1800,1,'g')}
- slider('baseControls','ピザ玉の重さ','ball',80,400,5,'g');if(state.mode==='target')slider('baseControls','作りたい個数','quantity',1,24,1,'個');
- $('prefermentBox').hidden=state.process==='straight';$('prefermentTitle').textContent=state.process==='poolish'?'ポーリッシュ':'ビガ';
- if(state.process!=='straight')slider('prefermentControls','種の加水率','bigaHyd',state.process==='poolish'?80:40,state.process==='poolish'?120:80,1,'%');
- slider('ratioControls','最終加水率','hydration',45,90,.5,'%');slider('ratioControls','塩分率','salt',0,5,.1,'%');slider('ratioControls','オイル率','oil',0,10,.5,'%');
- $('yeast').max=Math.max(10,Math.ceil(state.yeast));$('yeast').value=state.yeast;$('prefermentYeast').value=state.prefermentYeast;$('yeastSplitField').hidden=state.process==='straight';
- for(let i=0;i<2;i++){$('extraName'+i).value=state.extras[i].name;$('extraPct'+i).value=state.extras[i].pct||''}
- flourRows();results();
-}
-// Keep the iPhone range slider's drag uninterrupted: update displayed numbers,
-// never replace a focused slider or flour input while the slider is moving.
-function updateFlourRowsInPlace(){
- const c=calc();const rows=document.querySelectorAll('#flourRows .rc2-flour');
- if(rows.length!==c.flours.length){flourRows();return}
- rows.forEach((row,i)=>{
-  const weight=row.querySelector('.flour-grams input');
-  if(weight&&document.activeElement!==weight)weight.value=String(c.flours[i].grams);
-  const pct=row.querySelector('.rc2-pct');if(pct)pct.textContent=fmt(c.flours[i].pct)+'%';
-  const seed=row.querySelector('.rc2-seed input');
-  if(seed){seed.max=String(c.flours[i].grams);if(document.activeElement!==seed)seed.value=String(Math.round(state.flours[i].seed))}
+ document.querySelectorAll('[data-mode]').forEach(button => {
+  const active = button.dataset.mode === state.mode;
+  button.classList.toggle('active', active);
+  button.setAttribute('aria-pressed', String(active));
  });
-}
-function flourRows(){
- const c=calc(),host=$('flourRows');host.replaceChildren();
- state.flours.forEach((f,i)=>{
-  const row=document.createElement('div');row.className='flour-row rc2-flour';
-  const name=document.createElement('div');name.className='flour-name';name.innerHTML='<label>粉 '+(i+1)+'</label>';const nameInput=document.createElement('input');nameInput.value=f.name;nameInput.placeholder='粉の名前';nameInput.oninput=()=>{f.name=nameInput.value;persist();results()};name.append(nameInput);
-  const grams=document.createElement('div');grams.className='flour-grams';
-  const last=i===state.flours.length-1;
-  grams.innerHTML='<label>粉量 g'+(last?' · 自動':'')+'</label>';
-  const g=document.createElement('input');g.type='number';g.min='0';g.step='1';g.inputMode='numeric';
-  g.value=String(c.flours[i].grams);g.setAttribute('aria-label','粉'+(i+1)+'の重量'+(last?'（自動計算）':''));
-  if(last){g.readOnly=true;g.classList.add('auto-flour-grams');g.title='総粉量から他の粉を引いた残りを自動計算します'}
-  else g.onchange=()=>{
-   const v=Math.round(Number(g.value));if(!Number.isFinite(v)||v<0){flourRows();return}
-   const total=Math.max(0,Math.round(flourTotal()));
-   const other=c.flours.slice(0,-1).reduce((n,x,j)=>n+(j===i?0:x.grams),0);
-   const value=Math.min(v,Math.max(0,total-other));
-   if(value!==v)alert('他の粉との合計が総粉量を超えるため、入力できる最大値に調整しました。');
-   const weights=c.flours.map(x=>x.grams);weights[i]=value;weights[weights.length-1]=total-other-value;
-   state.flours.forEach((x,j)=>x.pct=total?weights[j]/total*100:(j===state.flours.length-1?100:0));
-   prepareSeeds();persist();redraw();
-  };
-  grams.append(g);
-  const pct=document.createElement('span');pct.className='rc2-pct';pct.textContent=fmt(c.flours[i].pct)+'%';
-  row.append(name,grams,pct);
-  if(state.flours.length>1){const del=document.createElement('button');del.className='quiet delete-flour';del.textContent='×';del.setAttribute('aria-label','粉を削除');del.onclick=()=>{state.flours.splice(i,1);const sum=state.flours.reduce((n,x)=>n+x.pct,0);state.flours.forEach(x=>x.pct=sum?x.pct/sum*100:100/state.flours.length);prepareSeeds();persist();redraw()};row.append(del)}
-  if(state.process!=='straight'){const foot=document.createElement('div');foot.className='flour-foot rc2-seed';const label=document.createElement('label');label.textContent='ビガ／ポーリッシュ';const seed=document.createElement('input');seed.type='number';seed.min='0';seed.step='1';seed.inputMode='numeric';seed.max=String(c.flours[i].grams);seed.value=String(Math.round(f.seed));seed.onchange=()=>{f.seed=Math.max(0,Math.min(c.flours[i].grams,Math.round(Number(seed.value)||0)));prepareSeeds();persist();flourRows();results()};foot.append(label,seed,document.createTextNode('g'));row.append(foot)}host.append(row)
- });$('addFlour').hidden=state.flours.length>=4;
+ $('baseControls').replaceChildren();
+ $('ratioControls').replaceChildren();
+ $('prefermentControls').replaceChildren();
+ if (state.mode === 'flour') stateNumberControl('baseControls','総粉量','totalFlour',100,1800,1,'g',true);
+ stateNumberControl('baseControls','1玉の重さ','ball',80,400,5,'g',true);
+ if (state.mode === 'target') stateNumberControl('baseControls','玉数','quantity',1,24,1,'個',true);
+ $('prefermentBox').hidden = state.process === 'straight';
+ $('prefermentTitle').textContent = state.process === 'poolish' ? 'ポーリッシュ' : 'ビガ';
+ if (state.process !== 'straight') {
+  const poolish = state.process === 'poolish';
+  stateNumberControl('prefermentControls','種の加水率','bigaHyd',poolish ? 80 : 40,poolish ? 120 : 80,1,'%',true);
+ }
+ stateNumberControl('ratioControls','最終加水率','hydration',45,90,0.5,'%');
+ stateNumberControl('ratioControls','塩分率','salt',0,5,0.1,'%');
+ stateNumberControl('ratioControls','オイル率','oil',0,10,0.5,'%');
+ $('yeastSplitField').hidden = state.process === 'straight';
+ syncTotalYeast();
+ syncSeedYeast();
+ for (let i = 0; i < 2; i++) {
+  $('extraName' + i).value = state.extras[i].name;
+  syncExtraRates[i]();
+ }
+ flourRows();
+ results();
 }
 
-function group(id,title,theme,items){const wrap=document.createElement('section');wrap.className='ingredient-group '+theme;const heading=document.createElement('h3');heading.textContent=title;wrap.append(heading);const grid=document.createElement('div');grid.className='ingredient-grid';for(const item of items){const card=document.createElement('div');card.className='ingredient';const name=document.createElement('small');name.textContent=item[0];const value=document.createElement('b');value.textContent=Number.isFinite(item[1])?fmt(item[1])+'g':'—';card.append(name,value);if(item[2]?.length){const lines=document.createElement('div');lines.className='ingredient-breakdown';for(const t of item[2]){const d=document.createElement('div');d.textContent=t;lines.append(d)}card.append(lines)}grid.append(card)}wrap.append(grid);$(id).append(wrap)}
-function results(){
- const c=calc();updateStickySummary(c);updateSectionMetrics(c);if(!c.valid){$('summaryIngredients').textContent='配合を確認してください';}
- if(!c.valid)return;
- const blended=state.flours.length>1;
- const preFlours=c.flours.filter(f=>f.seed>1e-7).map(f=>(f.name||'名称未設定')+' '+fmt(f.seed)+'g');
- const mainFlours=c.flours.filter(f=>f.grams-(state.process==='straight'?0:f.seed)>1e-7).map(f=>(f.name||'名称未設定')+' '+fmt(f.grams-(state.process==='straight'?0:f.seed))+'g');
- const allFlours=c.flours.map(f=>(f.name||'名称未設定')+' '+fmt(f.pct)+'%（'+fmt(f.grams)+'g）');
- 
- $('yeastOut').textContent=fmt(Number(state.yeast))+'g';$('yeastPercent').textContent='総粉量に対して '+(Number(state.yeast)/c.totalFlour*100).toFixed(3)+'%';
+let syncFlourRows = [];
+function updateFlourRowsInPlace() {
+ for (const sync of syncFlourRows) sync();
+}
+
+function flourRows() {
+ const host = $('flourRows');
+ host.replaceChildren();
+ syncFlourRows = state.flours.map((flour, index) => {
+  const row = document.createElement('div');
+  row.className = 'formula-flour';
+  const title = '粉 ' + (index + 1);
+  const header = document.createElement('div');
+  header.className = 'formula-flour-header';
+  const name = document.createElement('input');
+  name.value = flour.name;
+  name.placeholder = '粉の名前';
+  name.setAttribute('aria-label', title + 'の名前');
+  name.oninput = () => { flour.name = name.value; persist(); results(); };
+  const ratio = document.createElement('span');
+  ratio.className = 'formula-flour-ratio';
+  header.append(name, ratio);
+  if (state.flours.length > 1) {
+   const remove = document.createElement('button');
+   remove.className = 'quiet';
+   remove.textContent = '×';
+   remove.setAttribute('aria-label', title + 'を削除');
+   remove.onclick = () => {
+    state.flours.splice(index, 1);
+    const sum = state.flours.reduce((total, item) => total + item.pct, 0);
+    state.flours.forEach(item => item.pct = sum ? item.pct / sum * 100 : 100 / state.flours.length);
+    prepareSeeds(); persist(); redraw();
+   };
+   header.append(remove);
+  }
+  row.append(header);
+  const quantity = document.createElement('div');
+  quantity.className = 'formula-control formula-flour-quantity';
+  const label = document.createElement('span');
+  label.className = 'formula-control-label';
+  const automatic = index === state.flours.length - 1;
+  label.textContent = automatic ? '粉量（自動）' : '粉量';
+  quantity.append(label);
+
+  const remaining = () => {
+   const current = calc();
+   const other = current.flours.slice(0,-1).reduce((total, item, i) => total + (i === index ? 0 : item.grams), 0);
+   return Math.max(0, current.totalFlour - other);
+  };
+  let syncWeight;
+  if (automatic) {
+   const output = document.createElement('output');
+   output.className = 'formula-auto-weight';
+   output.setAttribute('aria-label', title + 'の自動計算粉量');
+   quantity.append(output);
+   syncWeight = grams => { output.textContent = fmt(grams) + 'g'; };
+  } else {
+   const weight = numberStepper({
+    label:title + 'の粉量', unit:'g', step:1, integer:true, max:remaining,
+    readValue:() => calc().flours[index].grams,
+    writeValue(value) {
+     const current = calc();
+     const weights = current.flours.map(item => item.grams);
+     weights[weights.length - 1] = remaining() - value;
+     weights[index] = value;
+     state.flours.forEach((item, i) => item.pct = current.totalFlour ? weights[i] / current.totalFlour * 100 : (i === weights.length - 1 ? 100 : 0));
+     prepareSeeds(); persist(); updateFlourRowsInPlace(); results();
+    },
+   });
+   quantity.append(weight.control);
+   syncWeight = weight.sync;
+  }
+  row.append(quantity);
+  let seed;
+  if (state.process !== 'straight') {
+   seed = numberStepper({
+    label:title + 'の発酵種に使う粉量', unit:'g', step:1, integer:true,
+    max:() => calc().flours[index].grams,
+    readValue:() => flour.seed,
+    writeValue(value) {
+     flour.seed = value;
+     prepareSeeds(); persist(); updateFlourRowsInPlace(); results();
+    },
+   });
+   const seedRow = document.createElement('div');
+   seedRow.className = 'formula-control formula-flour-quantity';
+   const seedLabel = document.createElement('span');
+   seedLabel.className = 'formula-control-label';
+   seedLabel.textContent = '発酵種に使う粉';
+   seedRow.append(seedLabel, seed.control);
+   row.append(seedRow);
+  }
+  host.append(row);
+  return () => {
+   const {grams, pct} = calc().flours[index];
+   ratio.textContent = fmt(pct) + '%';
+   syncWeight(grams);
+   seed?.sync();
+  };
+ });
+ updateFlourRowsInPlace();
+ $('addFlour').hidden = state.flours.length >= 4;
+}
+
+function results() {
+ const current = calc();
+ updateStickySummary(current);
+ updateSectionMetrics(current);
+ $('yeastPercent').textContent = current.valid ? '総粉量に対して ' + (Number(state.yeast) / current.totalFlour * 100).toFixed(3) + '%' : '';
 }
 
 function applyPreset(k){const p=adopted[k]||presets[k];state.style=k;for(const key of ['hydration','salt','oil'])state[key]=p[key];state.extras=clone([p.extras?.[0]||{name:'',pct:0},p.extras?.[1]||{name:'',pct:0}]);if(p.flours)state.flours=clone(p.flours);if(p.process)state.process=p.process;if(p.bigaHyd!==undefined)state.bigaHyd=p.bigaHyd;normalise();prepareSeeds();persist();redraw()}
 function savedRecipes(){const curr=read('ange-v3-recipes',[]),prev=[];return [...(Array.isArray(curr)?curr.map((r,i)=>({...r,_key:'ange-v3-recipes',_i:i})):[]),...(Array.isArray(prev)?prev.map((r,i)=>({...r,_key:'ange-recipes',_i:i,legacy:true})):[])]}
 let recipeVisible=5;let editingRecipe=null;
 function currentRecipeData(){const {stage,fermentMethod,room,fridge,beforeCold,...recipe}=state;return clone(recipe)}
-function loadRecipeState(r){const s=r.state||{};if(r.legacy){state={...clone(defaults),...Object.fromEntries(['mode','bigaFlour','bigaHyd','extraFlour','hydration','salt','oil','ball','quantity'].filter(k=>s[k]!==undefined).map(k=>[k,s[k]]))};state.totalFlour=Number(state.bigaFlour)+Number(state.extraFlour);state.yeast=round(state.totalFlour*Number(s.yeast??.15)/100);state.prefermentYeast=state.yeast}else{state={...clone(defaults),...clone(s)};state.totalFlour=Number(s.totalFlour??(Number(s.bigaFlour??300)+Number(s.extraFlour??360)))}normalise();prepareSeeds();persist();redraw();selectTab('recipe')}
+function loadRecipeState(r){const s=r.state||{};if(r.legacy){state={...clone(defaults),...Object.fromEntries(['mode','bigaFlour','bigaHyd','extraFlour','hydration','salt','oil','ball','quantity'].filter(k=>s[k]!==undefined).map(k=>[k,s[k]]))};state.totalFlour=Number(state.bigaFlour)+Number(state.extraFlour);state.yeast=round(state.totalFlour*Number(s.yeast??.15)/100);state.prefermentYeast=state.yeast}else{state={...clone(defaults),...clone(s)};state.totalFlour=Number(s.totalFlour??(Number(s.bigaFlour??300)+Number(s.extraFlour??360)))}normalise();prepareSeeds();persist();redraw()}
 function recipeKey(r){return r.id||r._key+'::'+r._i}
-function showRecipes(){const root=$('recipeList');root.replaceChildren();const q=($('recipeSearch')?.value||'').trim().toLocaleLowerCase();let matches=savedRecipes().filter(r=>{const s=r.state||{};const fl=(s.flours||[]).map(f=>f.name).join(' ');const process={biga:'ビガ',straight:'ストレート',poolish:'ポーリッシュ'}[s.process]||'';return [r.name,fl,process,String(s.hydration??''),r.savedAt].join(' ').toLocaleLowerCase().includes(q)});if($('recipeSort')?.value==='name')matches.sort((a,b)=>a.name.localeCompare(b.name,'ja'));const limit=matches.slice(0,recipeVisible);for(const r of limit){const div=document.createElement('div');div.className='saved-item';if(editingRecipe&&editingRecipe.id===r.id&&editingRecipe.key===r._key)div.classList.add('edit-active');const info=document.createElement('div');const b=document.createElement('strong');b.textContent=r.name+(r.legacy?'（旧版）':'');const small=document.createElement('small');small.textContent=(r.savedAt||'')+(r.state?.hydration!==undefined?' ／ 加水率'+r.state.hydration+'%':'');info.append(b,small);const actions=document.createElement('div');actions.className='actions';const load=document.createElement('button');load.className='quiet small-action';load.textContent='読込';load.onclick=()=>{loadRecipeState(r);editingRecipe=null;$('recipeEditStatus').textContent='レシピを配合画面に読み込みました';showRecipes()};const edit=document.createElement('button');edit.className='quiet small-action';edit.textContent='編集';edit.onclick=()=>{loadRecipeState(r);editingRecipe={id:r.id,key:r._key,index:r._i,name:r.name};$('recipeName').value=r.name;$('recipeEditStatus').textContent='編集中：'+r.name+'。配合を変更後、レシピ帳で保存方法を選択してください。';selectTab('recipe');showRecipes()};const del=document.createElement('button');del.className='quiet small-action';del.textContent='削除';del.onclick=()=>{if(!confirm('このレシピを削除しますか？（過去のピザノートには影響しません）'))return;const list=read(r._key,[]);let idx=r.id?list.findIndex(x=>x.id===r.id):r._i;if(idx<0)return;list.splice(idx,1);localStorage.setItem(r._key,JSON.stringify(list));if(editingRecipe?.id===r.id&&editingRecipe?.key===r._key)stopRecipeEditing();showRecipes();refreshNoteRecipes()};actions.append(load,edit,del);div.append(info,actions);root.append(div)}if(!matches.length){const empty=document.createElement('p');empty.className='note';empty.textContent=q?'一致するレシピはありません。':'まだ保存されたレシピはありません。';root.append(empty)}$('moreRecipes').hidden=matches.length<=recipeVisible;$('moreRecipes').textContent='さらに'+Math.min(5,matches.length-recipeVisible)+'件表示（残り'+(matches.length-recipeVisible)+'件）';}
-function stopRecipeEditing(){editingRecipe=null;$('saveRecipe').textContent='この配合をレシピ帳に保存';$('recipeEditStatus').textContent='';$('recipeName').value='';const actions=$('recipeEditActions');if(actions)actions.hidden=true;$('recipeEditor').hidden=true}
-function beginRecipeEditing(){ $('saveRecipe').textContent='別名で保存';const actions=$('recipeEditActions');if(actions)actions.hidden=false;$('recipeEditor').hidden=false }
+const fermentationMethods = {room:'常温', cold:'冷蔵', mixed:'常温＋冷蔵庫'};
+
+const processLabels = {biga:'ビガ', straight:'ストレート', poolish:'ポーリッシュ'};
+
+function labelWithIcon(element, icon, label) {
+ const symbol = document.createElement('span');
+ symbol.className = 'ui-icon ui-icon-' + icon;
+ symbol.setAttribute('aria-hidden', 'true');
+ element.append(symbol, document.createTextNode(label));
+}
+
+function listAction(icon, label, iconOnly = false) {
+ const button = document.createElement('button');
+ button.type = 'button';
+ button.className = 'quiet icon-action';
+ labelWithIcon(button, icon, iconOnly ? '' : label);
+ if (iconOnly) {
+  button.classList.add('icon-only');
+  button.setAttribute('aria-label', label);
+  button.title = label;
+ }
+ return button;
+}
+
+function showRecipes() {
+ const root = $('recipeList');
+ root.replaceChildren();
+ const query = $('recipeSearch').value.trim().toLocaleLowerCase();
+ const matches = savedRecipes().filter(recipe => {
+  const data = recipe.state || {};
+  const flours = (data.flours || []).map(flour => flour.name).join(' ');
+  const process = processLabels[data.process];
+  return [recipe.name, flours, process, data.hydration, recipe.savedAt]
+   .join(' ').toLocaleLowerCase().includes(query);
+ });
+ if ($('recipeSort').value === 'name') matches.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+
+ for (const recipe of matches.slice(0, recipeVisible)) {
+  const item = document.createElement('div');
+  item.className = 'saved-item';
+  item.classList.toggle('edit-active', editingRecipe !== null && recipeKey(editingRecipe) === recipeKey(recipe));
+  const info = document.createElement('div');
+  const name = document.createElement('strong');
+  name.textContent = recipe.name + (recipe.legacy ? '（旧版）' : '');
+  const summary = document.createElement('small');
+  summary.textContent = [
+   processLabels[recipe.state?.process],
+   recipe.state?.hydration !== undefined ? '加水 ' + recipe.state.hydration + '%' : '',
+   recipe.savedAt,
+  ].filter(Boolean).join(' · ');
+  info.append(name, summary);
+  item.append(info);
+  if (recipe.conditions) item.append(recipeConditionDetails(recipe.conditions));
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  const load = listAction('scale', '読込');
+  load.onclick = () => {
+   stopRecipeEditing();
+   loadRecipeState(recipe);
+   $('recipeEditStatus').textContent = 'レシピを配合画面に読み込みました';
+   selectTab('recipe');
+   showRecipes();
+  };
+  const edit = listAction('edit', '編集');
+  edit.onclick = () => {
+   loadRecipeState(recipe);
+   editingRecipe = recipe;
+   $('recipeName').value = recipe.name;
+   fillRecipeConditions('editRecipeConditions', recipe.conditions);
+   $('recipeEditor').hidden = false;
+   $('editRecipeOptions').open = false;
+   $('quickSaveLabel').textContent = '編集へ';
+   $('recipeEditStatus').textContent = '編集中：' + recipe.name;
+   showRecipes();
+   $('recipeName').focus();
+  };
+  const remove = listAction('trash', 'レシピを削除', true);
+  remove.onclick = () => {
+   if (!confirm('このレシピを削除しますか？（過去のピザノートには影響しません）')) return;
+   const list = read(recipe._key, []);
+   const index = recipe.id ? list.findIndex(entry => entry.id === recipe.id) : recipe._i;
+   if (index < 0 || index >= list.length) return;
+   list.splice(index, 1);
+   localStorage.setItem(recipe._key, JSON.stringify(list));
+   if (editingRecipe && recipeKey(editingRecipe) === recipeKey(recipe)) stopRecipeEditing();
+   showRecipes();
+   refreshNoteRecipes();
+  };
+  actions.append(load, edit, remove);
+  item.append(actions);
+  root.append(item);
+ }
+
+ if (!matches.length) {
+  const empty = document.createElement('p');
+  empty.className = 'note';
+  empty.textContent = query ? '一致するレシピはありません。' : 'まだ保存されたレシピはありません。';
+  root.append(empty);
+  if (!query) {
+   const goToFormula = listAction('scale', '配合へ');
+   goToFormula.onclick = () => selectTab('recipe');
+   root.append(goToFormula);
+  }
+ }
+ $('moreRecipes').hidden = matches.length <= recipeVisible;
+ $('moreRecipes').textContent = 'さらに' + Math.min(5, matches.length - recipeVisible) + '件表示（残り' + (matches.length - recipeVisible) + '件）';
+}
+
+function recipeConditionDetails(conditions) {
+ const detail = document.createElement('details');
+ detail.className = 'recipe-conditions';
+ const heading = document.createElement('summary');
+ labelWithIcon(heading, 'drop', '発酵条件・メモ');
+ const values = [
+  fermentationMethods[conditions.method],
+  conditions.room != null ? '室温 ' + conditions.room + '℃' : '',
+  conditions.fridge != null ? '冷蔵庫 ' + conditions.fridge + '℃' : '',
+  conditions.roomHours != null ? '常温 ' + conditions.roomHours + '時間' : '',
+  conditions.coldHours != null ? '冷蔵 ' + conditions.coldHours + '時間' : '',
+ ].filter(Boolean);
+ detail.append(heading);
+ if (values.length) {
+  const summary = document.createElement('p');
+  summary.textContent = values.join(' ／ ');
+  detail.append(summary);
+ }
+ if (conditions.memo) {
+  const memo = document.createElement('p');
+  memo.textContent = conditions.memo;
+  detail.append(memo);
+ }
+ return detail;
+}
+
+function stopRecipeEditing() {
+ editingRecipe = null;
+ $('quickSaveLabel').textContent = '保存';
+ $('recipeEditStatus').textContent = '';
+ $('recipeName').value = '';
+ $('recipeEditor').hidden = true;
+}
+
 // Pizza notebook: saved separately from recipes; no forecasting or photos.
 const NOTES_KEY='ange-v3-notes';
 // Note records are stored independently of recipes.
 let editingNoteId=null;
+const TEMP_KEY = 'ange-v3-temp-defaults';
+const NOTE_DRAFT_KEY = 'ange-v3-note-draft';
 function saveNotes(notes){
  if(!Array.isArray(notes))throw new TypeError('Invalid note data');
  localStorage.setItem(NOTES_KEY,JSON.stringify(notes));
@@ -178,86 +452,315 @@ function saveNotes(notes){
 
 const dateTimeLocal=d=>{const pad=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes())};
 function durationText(a,b){if(!a||!b)return '日時を入力すると経過時間を表示します';const st=new Date(a),en=new Date(b);if(!Number.isFinite(+st)||!Number.isFinite(+en))return '日時を確認してください';const minutes=Math.round((en-st)/60000);if(minutes<0)return '終了日時が開始日時より前です';const hours=Math.floor(minutes/60),mins=minutes%60,days=Math.floor(hours/24);return '経過：'+(days?days+'日 ':'')+(hours%24||!days?(days?hours%24:hours)+'時間':'')+(mins?' '+mins+'分':'')};
-function refreshNoteRecipes(){const select=$('noteRecipe');if(!select)return;const prev=select.value;select.replaceChildren(new Option('現在の配合（保存済みでなくても可）','current'));for(const [i,r] of savedRecipes().entries()){const key=r._key+'::'+r._i;select.append(new Option(r.name+(r.legacy?'（旧版）':''),key))}if([...select.options].some(o=>o.value===prev))select.value=prev;else select.value='current';noteSeedVisibility()}
+function refreshNoteRecipes(){const select=$('noteRecipe');if(!select)return;const prev=select.value;select.replaceChildren(new Option('現在の配合','current'));for(const [i,r] of savedRecipes().entries()){const key=r._key+'::'+r._i;select.append(new Option(r.name+(r.legacy?'（旧版）':''),key))}if([...select.options].some(o=>o.value===prev))select.value=prev;else select.value='current';noteSeedVisibility()}
 function pickedRecipe(){const key=$('noteRecipe').value;if(key==='current')return {name:state.flours.map(f=>f.name).filter(Boolean).join('＋')+'・'+fmt(state.hydration)+'%・'+{biga:'ビガ法',straight:'ストレート法',poolish:'ポーリッシュ法'}[state.process],snapshot:clone(state)};const r=savedRecipes().find(r=>r._key+'::'+r._i===key);return r?{name:r.name,snapshot:clone(r.state||{})}: {name:'現在の配合',snapshot:clone(state)}}
 function noteSeedVisibility(){const selected=pickedRecipe();const process=selected.snapshot.process||'biga';$('noteSeedBlock').hidden=process==='straight'}
 function updateDurations(){for(const [id,out] of [['noteSeedHours','noteSeedDuration'],['noteMatureHours','noteMatureDuration']]){const v=$(id).value;$(out).textContent=v!==''?('設定：'+Number(v)+'時間'):'未設定'}}
 function noteInputs(){const ids=['noteStarted','noteTemp','noteHumidity','noteMethod','noteSeedHours','noteMatureHours','noteRating','noteMemo'];return Object.fromEntries(ids.map(k=>[k,$(k).value]))}
 let noteVisible=5;
-function showNotes(){const root=$('noteList');root.replaceChildren();const query=($('noteSearch')?.value||'').trim().toLocaleLowerCase();const ratingFilter=$('noteRatingFilter')?.value||'';const all=read(NOTES_KEY,[]);const notes=all.filter(n=>{const x=n.inputs||{};const hay=[n.recipeName,x.noteStarted,x.noteMemo,x.noteMethod,x.noteTemp,x.noteHumidity].join(' ').toLocaleLowerCase();if(!hay.includes(query))return false;const rating=Number(x.noteRating)||0;return !ratingFilter||(ratingFilter==='unrated'?rating===0:rating>=Number(ratingFilter))});if(!notes.length){const p=document.createElement('p');p.className='note';p.textContent=all.length?'該当する仕込み記録がありません。':'まだ仕込み記録がありません。';root.append(p)}for(const note of notes.slice(0,noteVisible)){const div=document.createElement('div');div.className='note-entry';const head=document.createElement('strong');head.textContent=note.recipeName;const meta=document.createElement('small');meta.textContent=(note.inputs.noteStarted||'日時未記入').replace('T',' ')+' ／ '+(note.inputs.noteRating?'★'.repeat(Number(note.inputs.noteRating)):'未評価');const detail=document.createElement('p');const segments=[];if(note.inputs.noteTemp!=='')segments.push('室温 '+note.inputs.noteTemp+'℃');if(note.inputs.noteHumidity!=='')segments.push('湿度 '+note.inputs.noteHumidity+'%');if(note.inputs.noteMatureHours!=='')segments.push('本練り後 '+note.inputs.noteMatureHours+'時間');if(note.inputs.noteSeedHours!=='')segments.push('種 '+note.inputs.noteSeedHours+'時間');if(note.inputs.noteMethod)segments.push({room:'常温',cold:'冷蔵',mixed:'常温＋冷蔵'}[note.inputs.noteMethod]||'');detail.textContent=segments.join(' ／ ')+(note.inputs.noteMemo?'\n'+note.inputs.noteMemo:'');const actions=document.createElement('div');actions.className='actions';const load=document.createElement('button');load.className='quiet small-action';load.textContent='詳細・編集';load.onclick=()=>{for(const [k,v] of Object.entries(note.inputs))if($(k))$(k).value=v;$('noteRecipe').value='current';editingNoteId=note.id;noteSeedVisibility();$('noteSeedBlock').hidden=note.recipeSnapshot?.process==='straight';updateDurations();syncDurationPicks();$('saveNote').textContent='この記録を更新';$('noteStatus').textContent='編集中：'+note.recipeName;switchNoteView('new');window.scrollTo(0,0)};const del=document.createElement('button');del.className='quiet small-action';del.textContent='削除';del.onclick=()=>{if(!confirm('この仕込み記録を削除しますか？'))return;saveNotes(read(NOTES_KEY,[]).filter(n=>n.id!==note.id));showNotes()};actions.append(load,del);const preview=document.createElement('div');preview.className='note-entry-preview';const snapshot=note.recipeSnapshot||{};preview.textContent=[snapshot.process?({biga:'ビガ法',poolish:'ポーリッシュ法',straight:'ストレート法'}[snapshot.process]||''):'',snapshot.totalFlour?'粉'+Math.round(Number(snapshot.totalFlour))+'g':'',snapshot.hydration!==undefined?'加水率'+snapshot.hydration+'%':'',note.inputs.noteSeedHours?'種'+note.inputs.noteSeedHours+'時間':'',note.inputs.noteMatureHours?'本練り後'+note.inputs.noteMatureHours+'時間':''].filter(Boolean).join(' · ');const more=document.createElement('details');const summary=document.createElement('summary');summary.textContent='詳細を見る';more.append(summary,detail,actions);div.append(head,meta,preview,more);root.append(div)}$('moreNotes').hidden=notes.length<=noteVisible;$('moreNotes').textContent='さらに'+Math.min(5,notes.length-noteVisible)+'件表示（残り'+(notes.length-noteVisible)+'件）'}
+function showNotes(){const root=$('noteList');root.replaceChildren();const query=($('noteSearch')?.value||'').trim().toLocaleLowerCase();const ratingFilter=$('noteRatingFilter')?.value||'';const all=read(NOTES_KEY,[]);const notes=all.filter(n=>{const x=n.inputs||{};const hay=[n.recipeName,x.noteStarted,x.noteMemo,x.noteMethod,x.noteTemp,x.noteHumidity].join(' ').toLocaleLowerCase();if(!hay.includes(query))return false;const rating=Number(x.noteRating)||0;return !ratingFilter||(ratingFilter==='unrated'?rating===0:rating>=Number(ratingFilter))});if(!notes.length){const p=document.createElement('p');p.className='note';p.textContent=all.length?'該当する仕込み記録がありません。':'まだ仕込み記録がありません。';root.append(p)}for(const note of notes.slice(0,noteVisible)){const div=document.createElement('div');div.className='note-entry';const head=document.createElement('strong');head.textContent=note.recipeName;const meta=document.createElement('small');meta.textContent=(note.inputs.noteStarted||'日時未記入').replace('T',' ')+' ／ '+(note.inputs.noteRating?'★'.repeat(Number(note.inputs.noteRating)):'未評価');const detail=document.createElement('p');const segments=[];if(note.inputs.noteTemp!=='')segments.push('室温 '+note.inputs.noteTemp+'℃');if(note.inputs.noteHumidity!=='')segments.push('湿度 '+note.inputs.noteHumidity+'%');if(note.inputs.noteMatureHours!=='')segments.push('本練り後 '+note.inputs.noteMatureHours+'時間');if(note.inputs.noteSeedHours!=='')segments.push('種 '+note.inputs.noteSeedHours+'時間');if(note.inputs.noteMethod)segments.push({room:'常温',cold:'冷蔵',mixed:'常温＋冷蔵'}[note.inputs.noteMethod]||'');detail.textContent=segments.join(' ／ ')+(note.inputs.noteMemo?'\n'+note.inputs.noteMemo:'');const actions=document.createElement('div');actions.className='actions';const load=listAction('edit','編集');load.onclick=()=>{for(const [k,v] of Object.entries(note.inputs))if($(k))$(k).value=v;$('noteRecipe').value='current';editingNoteId=note.id;noteSeedVisibility();$('noteSeedBlock').hidden=note.recipeSnapshot?.process==='straight';updateDurations();syncDurationPicks();$('saveNote').textContent='この記録を更新';$('noteStatus').textContent='編集中：'+note.recipeName;switchNoteView('new');window.scrollTo(0,0)};const del=listAction('trash','仕込み記録を削除',true);del.onclick=()=>{if(!confirm('この仕込み記録を削除しますか？'))return;saveNotes(read(NOTES_KEY,[]).filter(n=>n.id!==note.id));showNotes()};actions.append(load,del);const preview=document.createElement('div');preview.className='note-entry-preview';const snapshot=note.recipeSnapshot||{};preview.textContent=[snapshot.process?({biga:'ビガ法',poolish:'ポーリッシュ法',straight:'ストレート法'}[snapshot.process]||''):'',snapshot.totalFlour?'粉'+Math.round(Number(snapshot.totalFlour))+'g':'',snapshot.hydration!==undefined?'加水率'+snapshot.hydration+'%':'',note.inputs.noteSeedHours?'種'+note.inputs.noteSeedHours+'時間':'',note.inputs.noteMatureHours?'本練り後'+note.inputs.noteMatureHours+'時間':''].filter(Boolean).join(' · ');const more=document.createElement('details');const summary=document.createElement('summary');labelWithIcon(summary,'note','詳細・メモ');more.append(summary,detail,actions);div.append(head,meta,preview,more);root.append(div)}$('moreNotes').hidden=notes.length<=noteVisible;$('moreNotes').textContent='さらに'+Math.min(5,notes.length-noteVisible)+'件表示（残り'+(notes.length-noteVisible)+'件）'}
 function resetNoteForm(){editingNoteId=null;$('saveNote').textContent='仕込み記録を保存';for(const k of ['noteSeedHours','noteMatureHours','noteMemo','noteRating'])$(k).value='';updateDurations()}
 function initNotes(){if(!$('noteStarted').value)$('noteStarted').value=dateTimeLocal(new Date());refreshNoteRecipes();$('noteRecipe').onchange=noteSeedVisibility;for(const id of ['noteSeedHours','noteMatureHours'])$(id).oninput=updateDurations;$('saveNote').onclick=()=>{const inp=noteInputs();if(inp.noteHumidity!==''&&(+inp.noteHumidity<0||+inp.noteHumidity>100)){$('noteStatus').textContent='湿度は0〜100%で入力してください';return}for(const id of ['noteSeedHours','noteMatureHours'])if(inp[id]!==''&&(!Number.isFinite(Number(inp[id]))||Number(inp[id])<0||Number(inp[id])>1000)){$('noteStatus').textContent='発酵時間を確認してください';return}const chosen=pickedRecipe();const notes=read(NOTES_KEY,[]);const existing=editingNoteId?notes.find(n=>n.id===editingNoteId):null;const item={id:existing?.id||'note-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),recipeName:existing?.recipeName||chosen.name,recipeSnapshot:existing?.recipeSnapshot||chosen.snapshot,inputs:inp,savedAt:new Date().toISOString()};if(existing)notes.splice(notes.findIndex(n=>n.id===existing.id),1,item);else notes.unshift(item);try{saveNotes(notes);$('noteStatus').textContent='✓ 記録を保存しました';resetNoteForm();showNotes();switchNoteView('history')}catch(e){$('noteStatus').textContent='保存できませんでした。端末の空き容量とブラウザ設定を確認してください'}};showNotes();updateDurations()}
-const BACKUP_KEYS=['ange-v3-current','ange-v3-adopted','ange-v3-recipes',NOTES_KEY];
-function initBackups(){$('exportBackup').onclick=()=>{const items={};for(const k of BACKUP_KEYS){const s=localStorage.getItem(k);if(s!==null)items[k]=JSON.parse(s)}const json=JSON.stringify({app:'Ange Pizza Lab',formatVersion:1,exportedAt:new Date().toISOString(),items},null,2);const a=document.createElement('a');const url=URL.createObjectURL(new Blob([json],{type:'application/json'}));a.href=url;a.download='Ange_Pizza_Lab_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);$('backupStatus').textContent='バックアップを作成しました。iCloud Driveなどに保存してください'};$('importBackup').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const parsed=JSON.parse(await file.text());if(parsed.app!=='Ange Pizza Lab'||parsed.formatVersion!==1||!parsed.items||typeof parsed.items!=='object'||Object.keys(parsed.items).some(k=>!BACKUP_KEYS.includes(k)))throw Error('形式が異なります');if(!confirm('現在の保存レシピ・仕込み履歴をバックアップ内容で置き換えます。続けますか？'))return;for(const [key,value] of Object.entries(parsed.items))localStorage.setItem(key,JSON.stringify(value));location.reload()}catch(err){$('backupStatus').textContent='復元できません。Ange Pizza Labのバックアップファイルを選んでください'}finally{e.target.value=''}}}
+const BACKUP_V1_KEYS = ['ange-v3-current', 'ange-v3-adopted', 'ange-v3-recipes', NOTES_KEY];
+const BACKUP_KEYS = [...BACKUP_V1_KEYS, TEMP_KEY, NOTE_DRAFT_KEY];
+
+function restoreBackup(backup) {
+ const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+ const keys = backup?.formatVersion === 1 ? BACKUP_V1_KEYS : BACKUP_KEYS;
+ if (backup?.app !== 'Ange Pizza Lab' || ![1, 2].includes(backup.formatVersion) || !isRecord(backup.items)) {
+  throw new Error('Ange Pizza Labのバックアップファイルを選んでください');
+ }
+ const entries = Object.entries(backup.items);
+ for (const [key, value] of entries) {
+  const valid = key === 'ange-v3-recipes'
+   ? Array.isArray(value) && value.every(recipe => isRecord(recipe) && typeof recipe.name === 'string')
+   : key === NOTES_KEY
+    ? Array.isArray(value) && value.every(note => isRecord(note) && isRecord(note.inputs))
+    : isRecord(value);
+  if (!keys.includes(key) || !valid) throw new Error('バックアップの保存データの形式を確認してください');
+ }
+ if (!confirm('ファイルに含まれる保存データを置き換えます。続けますか？')) return;
+
+ const previous = new Map(entries.map(([key]) => [key, localStorage.getItem(key)]));
+ const written = [];
+ try {
+  for (const [key, value] of entries) {
+   localStorage.setItem(key, JSON.stringify(value));
+   written.push(key);
+  }
+ } catch {
+  for (const key of written.reverse()) {
+   if (previous.get(key) === null) localStorage.removeItem(key);
+   else localStorage.setItem(key, previous.get(key));
+  }
+  throw new Error('復元できません。空き容量とブラウザ設定を確認してください');
+ }
+ location.reload();
+}
+
+function initBackups() {
+ $('exportBackup').onclick = () => {
+  try {
+   const items = {};
+   for (const key of BACKUP_KEYS) {
+    const stored = localStorage.getItem(key);
+    if (stored !== null) items[key] = JSON.parse(stored);
+   }
+   const json = JSON.stringify({app:'Ange Pizza Lab', formatVersion:2, exportedAt:new Date().toISOString(), items}, null, 2);
+   const link = document.createElement('a');
+   const url = URL.createObjectURL(new Blob([json], {type:'application/json'}));
+   link.href = url;
+   link.download = 'Ange_Pizza_Lab_backup_' + new Date().toISOString().slice(0, 10) + '.json';
+   link.click();
+   setTimeout(() => URL.revokeObjectURL(url), 1000);
+   $('backupStatus').textContent = 'バックアップを作成しました。iCloud Driveなどに保存してください';
+  } catch {
+   $('backupStatus').textContent = 'バックアップを作成できませんでした。保存データとブラウザ設定を確認してください';
+  }
+ };
+ $('importBackup').onchange = async event => {
+  const input = event.target;
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+   restoreBackup(JSON.parse(await file.text()));
+  } catch (error) {
+   $('backupStatus').textContent = error instanceof SyntaxError
+    ? 'Ange Pizza Labのバックアップファイルを選んでください' : error.message;
+  } finally {
+   input.value = '';
+  }
+ };
+}
 function switchNoteView(view){const history=view!=='new';const editor=document.querySelector('.note-editor-card');const list=document.querySelector('.note-history-card');if(!editor||!list)return;editor.hidden=history;list.hidden=!history;for(const [id,active] of [['noteHistoryTab',history],['noteNewTab',!history]]){const b=$(id);b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active))}if(history)showNotes()}
-function selectTab(tab){document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===tab));document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.body.classList.toggle('recipe-tab-active',tab==='recipe');const summary=$('stickySummary');if(summary){summary.hidden=tab!=='recipe';if(tab!=='recipe'&&$('summaryDetails')&&!$('summaryDetails').hidden)$('summaryToggle').click()}if(tab==='ferment')switchNoteView('history');window.dispatchEvent(new Event('scroll'))}
+let activeTab;
+function selectTab(tab) {
+ const tabChanged = activeTab && activeTab !== tab;
+ activeTab = tab;
+ document.querySelectorAll('.panel').forEach(panel => panel.classList.toggle('active', panel.id === tab));
+ document.querySelectorAll('[data-tab]').forEach(button => {
+  const active = button.dataset.tab === tab;
+  button.classList.toggle('active', active);
+  button.setAttribute('aria-pressed', String(active));
+ });
+ document.body.classList.toggle('recipe-tab-active', tab === 'recipe');
+ $('stickySummary').hidden = tab !== 'recipe';
+ if (tab !== 'recipe') toggleMaterialTable(false);
+ if (tab === 'ferment') switchNoteView('history');
+ $('settingsMenu').open = false;
+ if (tabChanged) window.scrollTo(0, 0);
+}
 $('noteHistoryTab').onclick=()=>switchNoteView('history');
 $('noteNewTab').onclick=()=>{if(editingNoteId){resetNoteForm();$('noteStatus').textContent=''}switchNoteView('new')};
-$('quickSaveRecipe').onclick=()=>openRecipeModal();
+$('quickSaveRecipe').onclick = () => {
+ if (editingRecipe) {
+  selectTab('saved');
+  $('recipeName').focus();
+  return;
+ }
+ openRecipeModal();
+};
 $('style').onchange=e=>applyPreset(e.target.value);
 $('process').onchange=e=>{state.process=e.target.value;if(state.process==='poolish'&&state.bigaHyd<80)state.bigaHyd=100;if(state.process==='biga'&&state.bigaHyd>80)state.bigaHyd=50;if(state.process!=='straight'&&state.flours.every(f=>f.seed===0))state.flours[0].seed=Math.min(300,flourTotal());normalise();persist();redraw()};
 $('addFlour').onclick=()=>{if(state.flours.length>=4)return;const last=state.flours.at(-1);const newcomer=round(last.pct/2);last.pct=round(last.pct-newcomer);state.flours.push({id:Math.max(...state.flours.map(x=>x.id))+1,name:'',pct:newcomer,seed:0});prepareSeeds();persist();flourRows();results()};
 for(const button of document.querySelectorAll('[data-mode]'))button.onclick=()=>{if(state.mode==='target'&&button.dataset.mode==='flour'){const c=calc();state.totalFlour=Math.max(0,round(c.totalFlour))}state.mode=button.dataset.mode;prepareSeeds();persist();redraw()};
 $('yeastType').onchange=e=>{const next=e.target.value;if(next!==state.yeastType){const factor=next==='fresh'?3:1/3;state.yeast=round(state.yeast*factor);state.prefermentYeast=round(state.prefermentYeast*factor);state.yeastType=next;persist();redraw()}};
-function syncYeast(){state.prefermentYeast=Math.min(state.prefermentYeast,state.yeast);$('yeast').value=state.yeast;$('prefermentYeast').value=state.prefermentYeast;persist();results()}
-$('yeast').oninput=e=>{state.yeast=Number(e.target.value);syncYeast()};$('yeastMinus').onclick=()=>{state.yeast=Math.max(0,round(state.yeast-.1));syncYeast()};$('yeastPlus').onclick=()=>{state.yeast=Math.min(10,round(state.yeast+.1));syncYeast()};$('prefermentYeast').onchange=e=>{state.prefermentYeast=Math.max(0,Math.min(state.yeast,Number(e.target.value)||0));syncYeast()};
-for(let i=0;i<2;i++)for(const [type,k] of [['extraName','name'],['extraPct','pct']])$(type+i).oninput=e=>{state.extras[i][k]=k==='pct'?Math.max(0,Math.min(50,Number(e.target.value)||0)):e.target.value;prepareSeeds();persist();flourRows();results()};
+const syncTotalYeast = appendNumberControl('yeastControl', 'イースト総量', {
+ unit:'g', step:0.1, max:() => Math.max(10, Math.ceil(state.yeast)),
+ readValue:() => state.yeast,
+ writeValue(value) {
+  state.yeast = value;
+  state.prefermentYeast = Math.min(state.prefermentYeast, value);
+  prepareSeeds(); syncSeedYeast(); persist(); updateFlourRowsInPlace(); results();
+ },
+});
+const syncSeedYeast = appendNumberControl('prefermentYeastControl', '種に入れるイースト', {
+ unit:'g', step:0.1, max:() => Number(state.yeast),
+ readValue:() => state.prefermentYeast,
+ writeValue(value) { state.prefermentYeast = value; persist(); results(); },
+});
+const syncExtraRates = [0, 1].map(index => {
+ const updateExtras = () => { prepareSeeds(); persist(); updateFlourRowsInPlace(); results(); };
+ $('extraName' + index).oninput = event => {
+  state.extras[index].name = event.target.value;
+  updateExtras();
+ };
+ return appendNumberControl('extraPct' + index + 'Control', '材料 ' + (index + 1) + ' の配合率', {
+  unit:'%', step:0.1, max:50,
+  readValue:() => state.extras[index].pct,
+  writeValue(value) { state.extras[index].pct = value; updateExtras(); },
+ });
+});
 $('adopt').onclick=()=>{adopted[state.style]={hydration:state.hydration,salt:state.salt,oil:state.oil,extras:clone(state.extras),flours:clone(state.flours),process:state.process,bigaHyd:state.bigaHyd};localStorage.setItem('ange-v3-adopted',JSON.stringify(adopted));$('adoptStatus').textContent='✓ '+presets[state.style].name+'の配合を保存しました'};
 $('restorePreset').onclick=()=>{if(!confirm('このスタイルで採用した配合を初期値に戻しますか？'))return;delete adopted[state.style];localStorage.setItem('ange-v3-adopted',JSON.stringify(adopted));applyPreset(state.style);$('adoptStatus').textContent='初期配合に戻しました'};
 for(const button of document.querySelectorAll('[data-tab]'))button.onclick=()=>selectTab(button.dataset.tab);
-const recipeEditActions=document.createElement('div');recipeEditActions.id='recipeEditActions';recipeEditActions.className='actions';recipeEditActions.hidden=true;recipeEditActions.innerHTML='<button id="overwriteRecipe" class="primary" type="button">上書き保存</button><button id="cancelRecipeEdit" class="quiet" type="button">編集をやめる</button>';$('saveRecipe').insertAdjacentElement('afterend',recipeEditActions);
-$('saveRecipe').onclick=()=>{const flourLabel=state.flours.map(f=>f.name.trim()).filter(Boolean).join('＋');const label=$('recipeName').value.trim()||`${flourLabel||presets[state.style].name}・${fmt(state.hydration)}%・${{biga:'ビガ法',straight:'ストレート法',poolish:'ポーリッシュ法'}[state.process]}`;if(editingRecipe&&label===editingRecipe.name){$('recipeEditStatus').textContent='別名で保存するには、元と異なるレシピ名を入力してください';selectTab('saved');$('recipeName').focus();return}const recipes=read('ange-v3-recipes',[]);if(recipes.some(r=>r.name===label)&&!confirm('同じ名前のレシピがあります。別のレシピとして保存しますか？'))return;recipes.unshift({id:'recipe-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),name:label,state:currentRecipeData(),savedAt:new Date().toLocaleDateString('ja-JP')});try{localStorage.setItem('ange-v3-recipes',JSON.stringify(recipes));stopRecipeEditing();$('recipeEditStatus').textContent='✓ 新しいレシピを保存しました';showRecipes();refreshNoteRecipes()}catch(e){$('recipeEditStatus').textContent='保存に失敗しました。空き容量を確認してください'}};
-$('overwriteRecipe').onclick=()=>{if(!editingRecipe)return;const label=$('recipeName').value.trim();if(!label){$('recipeEditStatus').textContent='レシピ名を入力してください';return}const source=editingRecipe;const old=read(source.key,[]);const index=source.id?old.findIndex(x=>x.id===source.id):source.index;if(index<0){$('recipeEditStatus').textContent='元のレシピが見つかりません';return}const savedAt=new Date().toLocaleDateString('ja-JP');const updated={...old[index],name:label,state:currentRecipeData(),savedAt};if(source.key==='ange-v3-recipes'){old[index]=updated;localStorage.setItem(source.key,JSON.stringify(old))}else{const curr=read('ange-v3-recipes',[]);curr.unshift({...updated,id:'recipe-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),legacy:undefined});localStorage.setItem('ange-v3-recipes',JSON.stringify(curr));old.splice(index,1);localStorage.setItem(source.key,JSON.stringify(old))}stopRecipeEditing();$('recipeEditStatus').textContent='✓ レシピを更新しました（過去の仕込み記録は変更しません）';showRecipes();refreshNoteRecipes()};
-$('cancelRecipeEdit').onclick=()=>{stopRecipeEditing();showRecipes()};
+$('saveRecipe').onclick = () => saveRecipeEdit(false);
+$('overwriteRecipe').onclick = () => saveRecipeEdit(true);
+$('cancelRecipeEdit').onclick = () => { stopRecipeEditing(); showRecipes(); };
+$('recipeEditFormula').onclick = () => selectTab('recipe');
 $('recipeSearch').oninput=()=>{recipeVisible=5;showRecipes()};$('recipeSort').onchange=()=>{recipeVisible=5;showRecipes()};$('moreRecipes').onclick=()=>{recipeVisible+=5;showRecipes()};
 $('noteSearch').oninput=()=>{noteVisible=5;showNotes()};$('noteRatingFilter').onchange=()=>{noteVisible=5;showNotes()};$('moreNotes').onclick=()=>{noteVisible+=5;showNotes()};
-const baseShowRecipes=showRecipes;showRecipes=function(){baseShowRecipes();if(editingRecipe)beginRecipeEditing()};
-$('reset').onclick=()=>{if(confirm('現在の配合だけ初期化しますか？（保存レシピと採用済みプリセットは残ります）')){state=clone(defaults);normalise();persist();redraw()}};
-// Collapsible sections retain their controls and state; first section opens by default.
-document.querySelectorAll('#recipe > .card').forEach((card,index)=>{
- const heading=card.querySelector(':scope > h2');if(!heading)return;
- const btn=document.createElement('button');btn.type='button';btn.className='section-fold';btn.textContent=heading.textContent;btn.setAttribute('aria-expanded',String(index===0));
- heading.replaceWith(btn);
- const content=document.createElement('div');content.className='section-fold-body';
- while(btn.nextSibling)content.appendChild(btn.nextSibling);
- card.appendChild(content);content.hidden=index!==0;
- btn.onclick=()=>{content.hidden=!content.hidden;btn.setAttribute('aria-expanded',String(!content.hidden))};
-});
+$('reset').onclick=()=>{$('settingsMenu').open=false;if(confirm('現在の配合だけ初期化しますか？（保存レシピと採用済みプリセットは残ります）')){state=clone(defaults);normalise();persist();redraw()}};
 normalise();prepareSeeds();redraw();showRecipes();initNotes();initBackups();
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
-
-// Ver.2.5: viewport-safe page-top navigation; does not change saved data.
-(()=>{const topButton=document.getElementById('backToTop');if(!topButton)return;
-const updateTopButton=()=>{topButton.hidden=window.scrollY<260||($('stickySummary')&&!$('stickySummary').hidden&&!$('summaryDetails').hidden);};
-topButton.addEventListener('click',()=>window.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'}));
-window.addEventListener('scroll',updateTopButton,{passive:true});
-window.addEventListener('pageshow',updateTopButton);
-updateTopButton();})();
-
-// Ver.3.0: bottom sheet and horizontal method selector.
-function escapeText(s){return String(s||'名称未設定').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
-function updateStickySummary(c){
- const weight=$('summaryWeight');if(!weight)return;
- weight.textContent=c.valid?fmt(c.dough)+'g':'—';
- $('summaryIngredients').textContent=c.valid?'粉 '+fmt(c.totalFlour)+'g · 水 '+fmt(c.water)+'g · 塩 '+fmt(c.totalFlour*Number(state.salt)/100)+'g · 酵母 '+fmt(Number(state.yeast))+'g':'配合を確認してください';
- const line=(label,value)=>'<div class="summary-line"><span>'+label+'</span><b>'+fmt(value)+'g</b></div>';
- $('summarySeed').innerHTML=state.process==='straight'?'<p class="note">ストレート法では発酵種は使いません</p>':line('粉',c.seedFlour)+c.flours.filter(f=>f.seed>0).map(f=>'<div class="summary-flour">'+escapeText(f.name)+' '+fmt(f.seed)+'g</div>').join('')+line('水',c.seedWater)+line('イースト',c.seedYeast);
- $('summaryMain').innerHTML=line('粉',c.totalFlour-c.seedFlour)+c.flours.filter(f=>f.grams-(state.process==='straight'?0:f.seed)>0).map(f=>'<div class="summary-flour">'+escapeText(f.name)+' '+fmt(f.grams-(state.process==='straight'?0:f.seed))+'g</div>').join('')+line('水',c.water-c.seedWater)+line('塩',c.totalFlour*Number(state.salt)/100)+line('イースト',Number(state.yeast)-c.seedYeast);
- const balls=Number(state.ball)>0?Math.floor(c.dough/Number(state.ball)):0;const remainder=Number(state.ball)>0?Math.max(0,c.dough-balls*Number(state.ball)):0; $('summaryBalls').textContent=c.valid&&Number(state.ball)>0?'生地玉 '+fmt(Number(state.ball))+'g × '+balls+'玉 ／ 余り '+fmt(remainder)+'g':'生地玉の設定を確認してください';
+function updateStickySummary(c) {
+ $('summaryWeight').textContent = c.valid ? fmt(c.dough) + 'g' : '—';
+ $('summaryIngredients').hidden = c.valid;
+ $('summaryIngredients').textContent = c.valid ? '' : '配合を確認してください';
+ const straight = state.process === 'straight';
+ const table = $('summaryMaterialRows');
+ table.replaceChildren();
+ $('summarySeedHeading').hidden = straight;
+ if (c.valid) {
+  const rows = [
+   ['粉 合計', c.seedFlour, c.totalFlour - c.seedFlour, c.totalFlour],
+   ...c.flours.map(flour => {
+    const seed = straight ? 0 : flour.seed;
+    return [flour.name || '名称未設定', seed, flour.grams - seed, flour.grams];
+   }),
+   ['水', c.seedWater, c.water - c.seedWater, c.water],
+   ['塩', null, c.totalFlour * Number(state.salt) / 100, c.totalFlour * Number(state.salt) / 100],
+   ['イースト', c.seedYeast, Number(state.yeast) - c.seedYeast, Number(state.yeast)],
+  ];
+  if (Number(state.oil) > 0) {
+   const oil = c.totalFlour * Number(state.oil) / 100;
+   rows.push(['オイル', null, oil, oil]);
+  }
+  for (const extra of c.extras) rows.push([extra.name, null, extra.grams, extra.grams]);
+  for (const [name, seed, main, total] of rows) {
+   const row = document.createElement('tr');
+   const heading = document.createElement('th');
+   heading.scope = 'row';
+   heading.textContent = name;
+   row.append(heading);
+   for (const amount of straight ? [main, total] : [seed, main, total]) {
+    const cell = document.createElement('td');
+    cell.textContent = amount === null ? '—' : fmt(amount);
+    row.append(cell);
+   }
+   table.append(row);
+  }
+ }
+ const balls = Number(state.ball) > 0 ? Math.floor(c.dough / Number(state.ball)) : 0;
+ const remainder = Number(state.ball) > 0 ? Math.max(0, c.dough - balls * Number(state.ball)) : 0;
+ $('summaryBalls').textContent = c.valid && Number(state.ball) > 0
+  ? '生地玉 ' + fmt(Number(state.ball)) + 'g × ' + balls + '玉 ／ 余り ' + fmt(remainder) + 'g'
+  : '配合または生地玉の設定を確認してください';
 }
 document.querySelectorAll('[data-process]').forEach(button=>button.addEventListener('click',()=>{const select=$('process');select.value=button.dataset.process;select.dispatchEvent(new Event('change',{bubbles:true}));document.querySelectorAll('[data-process]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button))})}));
-$('summaryToggle').addEventListener('click',()=>{const details=$('summaryDetails');details.hidden=!details.hidden;const expanded=!details.hidden;$('summaryToggle').setAttribute('aria-expanded',String(expanded));$('summaryLabel').textContent=expanded?'材料内訳を閉じる ▼':'材料内訳を見る ▲';$('backToTop').hidden=expanded||window.scrollY<260;});
+function toggleMaterialTable(show) {
+ $('summaryDetails').hidden = !show;
+ $('summaryToggle').setAttribute('aria-expanded', String(show));
+}
+
+$('summaryToggle').onclick = () => toggleMaterialTable($('summaryDetails').hidden);
 updateStickySummary(calc());
 
 // Ver.3.2: optional recipe conditions, saved temperature defaults, evidence-limited fermentation guidance.
-const TEMP_KEY='ange-v3-temp-defaults';
 function temperatureDefaults(){const v=read(TEMP_KEY,{room:24,fridge:4});return {room:Number.isFinite(Number(v.room))?Number(v.room):24,fridge:Number.isFinite(Number(v.fridge))?Number(v.fridge):4}}
-function openRecipeModal(){const d=temperatureDefaults();$('modalRecipeName').value='';$('modalRoom').value=d.room;$('modalFridge').value=d.fridge;$('modalFermentMethod').value='';$('modalRoomHours').value='';$('modalColdHours').value='';$('modalMemo').value='';$('modalError').hidden=true;$('recipeModal').showModal();$('modalRecipeName').focus()}
-function modalNumber(id,min,max){const s=$(id).value.trim();if(!s)return null;const n=Number(s);if(!Number.isFinite(n)||n<min||n>max)throw new Error('入力した温度・時間の範囲を確認してください');return n}
-function saveModalRecipe(skip){try{const name=$('modalRecipeName').value.trim();if(!name)throw new Error('レシピ名を入力してください');const conditions=skip?null:{room:modalNumber('modalRoom',-10,50),fridge:modalNumber('modalFridge',-5,20),method:$('modalFermentMethod').value||null,roomHours:modalNumber('modalRoomHours',0,500),coldHours:modalNumber('modalColdHours',0,500),memo:$('modalMemo').value.trim()};const recipes=read('ange-v3-recipes',[]);if(recipes.some(r=>r.name===name)&&!confirm('同じ名前のレシピがあります。別のレシピとして保存しますか？'))return;recipes.unshift({id:'recipe-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),name,state:currentRecipeData(),conditions,savedAt:new Date().toLocaleDateString('ja-JP')});localStorage.setItem('ange-v3-recipes',JSON.stringify(recipes));$('recipeModal').close();stopRecipeEditing();showRecipes();refreshNoteRecipes();selectTab('saved');$('recipeEditStatus').textContent='✓ レシピを追加しました'}catch(e){$('modalError').hidden=false;$('modalError').textContent=e.message||'保存できませんでした'}}
-$('modalCancel').onclick=()=>$('recipeModal').close();$('modalSave').onclick=()=>saveModalRecipe(false);$('modalSkip').onclick=()=>saveModalRecipe(true);
-$('openTempSettings').onclick=()=>{const d=temperatureDefaults();$('defaultRoom').value=d.room;$('defaultFridge').value=d.fridge;$('tempError').hidden=true;$('tempSettingsModal').showModal()};
+for (const id of ['newRecipeConditions', 'editRecipeConditions']) {
+ $(id).append($('recipeConditionsFields').content.cloneNode(true));
+}
+
+function fillRecipeConditions(id, values) {
+ for (const field of $(id).querySelectorAll('[data-condition]')) {
+  field.value = values?.[field.dataset.condition] ?? '';
+ }
+}
+
+function readRecipeConditions(id) {
+ const conditions = {};
+ for (const field of $(id).querySelectorAll('[data-condition]')) {
+  const key = field.dataset.condition;
+  const value = field.value.trim();
+  if (field.type === 'number') {
+   const number = Number(value);
+   if (field.validity.badInput || (value !== '' && (!Number.isFinite(number) ||
+    number < Number(field.min) || number > Number(field.max)))) {
+    throw new Error('入力した温度・時間の範囲を確認してください');
+   }
+   conditions[key] = value === '' ? null : number;
+  } else {
+   conditions[key] = value || null;
+  }
+ }
+ return Object.values(conditions).some(value => value !== null) ? conditions : null;
+}
+
+function openRecipeModal() {
+ $('modalRecipeName').value = '';
+ fillRecipeConditions('newRecipeConditions', temperatureDefaults());
+ $('modalError').hidden = true;
+ $('recipeModal').showModal();
+ $('modalRecipeName').focus();
+}
+
+function saveRecipeRecord(name, conditions, source = null) {
+ const key = source?._key || 'ange-v3-recipes';
+ const recipes = read(key, []);
+ const record = {name, state:currentRecipeData(), conditions, savedAt:new Date().toLocaleDateString('ja-JP')};
+ if (source) {
+  const index = source.id ? recipes.findIndex(recipe => recipe.id === source.id) : source._i;
+  if (index < 0 || index >= recipes.length) throw new Error('元のレシピが見つかりません');
+  recipes[index] = {...recipes[index], ...record};
+ } else {
+  if (recipes.some(recipe => recipe.name === name) &&
+   !confirm('同じ名前のレシピがあります。別のレシピとして保存しますか？')) return false;
+  recipes.unshift({id:'recipe-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), ...record});
+ }
+ try {
+  localStorage.setItem(key, JSON.stringify(recipes));
+ } catch {
+  throw new Error('保存に失敗しました。空き容量とブラウザ設定を確認してください');
+ }
+ return true;
+}
+
+function finishRecipeSave(message) {
+ stopRecipeEditing();
+ showRecipes();
+ refreshNoteRecipes();
+ selectTab('saved');
+ $('recipeEditStatus').textContent = message;
+}
+
+function saveRecipeEdit(overwrite) {
+ if (!editingRecipe) return;
+ const name = $('recipeName').value.trim();
+ try {
+  if (!name) throw new Error('レシピ名を入力してください');
+  if (!overwrite && name === editingRecipe.name) {
+   throw new Error('別名で保存するには、元と異なるレシピ名を入力してください');
+  }
+  const conditions = readRecipeConditions('editRecipeConditions');
+  if (saveRecipeRecord(name, conditions, overwrite ? editingRecipe : null)) {
+   finishRecipeSave(overwrite ? '✓ レシピを更新しました' : '✓ 別名で保存しました');
+  }
+ } catch (error) {
+  $('recipeEditStatus').textContent = error.message;
+ }
+}
+
+function saveModalRecipe(skip) {
+ try {
+  const name = $('modalRecipeName').value.trim();
+  if (!name) throw new Error('レシピ名を入力してください');
+  const conditions = skip ? null : readRecipeConditions('newRecipeConditions');
+  if (saveRecipeRecord(name, conditions)) {
+   $('recipeModal').close();
+   finishRecipeSave('✓ レシピを追加しました');
+  }
+ } catch (error) {
+  $('modalError').hidden = false;
+  $('modalError').textContent = error.message;
+ }
+}
+
+$('modalCancel').onclick = () => $('recipeModal').close();
+$('recipeModalForm').onsubmit = event => { event.preventDefault(); saveModalRecipe(false); };
+$('modalSkip').onclick = () => saveModalRecipe(true);
+$('openTempSettings').onclick=()=>{$('settingsMenu').open=false;const d=temperatureDefaults();$('defaultRoom').value=d.room;$('defaultFridge').value=d.fridge;$('tempError').hidden=true;$('tempSettingsModal').showModal()};
 $('tempCancel').onclick=()=>$('tempSettingsModal').close();$('tempSave').onclick=()=>{const r=Number($('defaultRoom').value),f=Number($('defaultFridge').value);if(!$('defaultRoom').value||!$('defaultFridge').value||!Number.isFinite(r)||!Number.isFinite(f)||r< -10||r>50||f< -5||f>20){$('tempError').hidden=false;$('tempError').textContent='室温は-10〜50℃、冷蔵庫は-5〜20℃で設定してください';return}localStorage.setItem(TEMP_KEY,JSON.stringify({room:r,fridge:f}));$('tempSettingsModal').close();renderFermentReference()};
 let referenceMethod='room';
 function renderFermentReference(){
@@ -276,11 +779,13 @@ document.querySelectorAll('.duration-picks').forEach(group=>{const id=group.data
 const _showNotes=showNotes;showNotes=function(){_showNotes();syncDurationPicks()};
 const _resetNoteForm=resetNoteForm;resetNoteForm=function(){_resetNoteForm();syncDurationPicks()};
 // Collapsible headers show the live flour total and hydration.
-function updateSectionMetrics(c){const buttons=document.querySelectorAll('#recipe>.card>.section-fold');if(buttons[1]){buttons[1].innerHTML='<span>② 粉の配合</span><span class="fold-metric">'+fmt(c.totalFlour)+'g</span>'}if(buttons[2]){buttons[2].innerHTML='<span>③ 配合を調整</span><span class="fold-metric">'+fmt(Number(state.hydration))+'%</span>'}}
+function updateSectionMetrics(c) {
+ $('flourMetric').textContent = fmt(c.totalFlour) + 'g';
+ $('hydrationMetric').textContent = fmt(Number(state.hydration)) + '%';
+}
 updateSectionMetrics(calc());syncDurationPicks();
 
 // RC2: preserve unfinished pizza-note input locally on this device.
-const NOTE_DRAFT_KEY='ange-v3-note-draft';
 function saveNoteDraft(){try{localStorage.setItem(NOTE_DRAFT_KEY,JSON.stringify({...noteInputs(),noteRecipe:$('noteRecipe').value}))}catch(e){}}
 try{const draft=read(NOTE_DRAFT_KEY,null);if(draft){for(const [k,v] of Object.entries(draft)){if($(k)&&v!==undefined)$(k).value=v}noteSeedVisibility();syncDurationPicks()}}catch(e){}
 $('ferment').addEventListener('input',saveNoteDraft);$('ferment').addEventListener('change',saveNoteDraft);
