@@ -413,6 +413,10 @@ function showRecipes() {
   info.append(name, summary);
   item.append(info);
   if (recipe.conditions) item.append(recipeConditionDetails(recipe.conditions));
+  const history = listAction('clock', '仕込み履歴');
+  history.classList.add('recipe-history-link');
+  history.onclick = () => showRecipeNoteHistory(recipe);
+  item.append(history);
 
   const actions = document.createElement('div');
   actions.className = 'actions';
@@ -503,28 +507,323 @@ function stopRecipeEditing() {
  $('recipeEditor').hidden = true;
 }
 
-// Pizza notebook: saved separately from recipes; no forecasting or photos.
-const NOTES_KEY='ange-v3-notes';
-// Note records are stored independently of recipes.
-let editingNoteId=null;
+// Saved separately so recipe changes never rewrite a past batch.
+const NOTES_KEY = 'ange-v3-notes';
 const TEMP_KEY = 'ange-v3-temp-defaults';
 const NOTE_DRAFT_KEY = 'ange-v3-note-draft';
-function saveNotes(notes){
- if(!Array.isArray(notes))throw new TypeError('Invalid note data');
- localStorage.setItem(NOTES_KEY,JSON.stringify(notes));
+const noteInputIds = ['noteStarted','noteTemp','noteHumidity','noteMethod','noteSeedHours','noteMatureHours','noteRating','noteMemo'];
+const stageLabels = {starter:'発酵種の仕込み',kneaded:'捏ね上げ',chill:'冷蔵庫に入れる',unchill:'冷蔵庫から出す',divide:'分割・丸め',beforeBake:'焼く前',other:'その他'};
+const nextStage = {starter:'kneaded',kneaded:'chill',chill:'unchill',unchill:'divide',divide:'beforeBake'};
+let editingNoteId = null;
+let noteRecipeFilter = null;
+let noteVisible = 5;
+
+function saveNotes(notes) {
+ localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
 }
 
 const dateTimeLocal=d=>{const pad=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes())};
-function durationText(a,b){if(!a||!b)return '日時を入力すると経過時間を表示します';const st=new Date(a),en=new Date(b);if(!Number.isFinite(+st)||!Number.isFinite(+en))return '日時を確認してください';const minutes=Math.round((en-st)/60000);if(minutes<0)return '終了日時が開始日時より前です';const hours=Math.floor(minutes/60),mins=minutes%60,days=Math.floor(hours/24);return '経過：'+(days?days+'日 ':'')+(hours%24||!days?(days?hours%24:hours)+'時間':'')+(mins?' '+mins+'分':'')};
-function refreshNoteRecipes(){const select=$('noteRecipe');if(!select)return;const prev=select.value;select.replaceChildren(new Option('現在の配合','current'));for(const [i,r] of savedRecipes().entries()){const key=r._key+'::'+r._i;select.append(new Option(r.name+(r.legacy?'（旧版）':''),key))}if([...select.options].some(o=>o.value===prev))select.value=prev;else select.value='current';noteSeedVisibility()}
-function pickedRecipe(){const key=$('noteRecipe').value;if(key==='current')return {name:flourAmounts(calc()).map(([name])=>name).filter(Boolean).join('＋')+'・'+fmt(state.hydration)+'%・'+{biga:'ビガ法',straight:'ストレート法',poolish:'ポーリッシュ法'}[state.process],snapshot:clone(state)};const r=savedRecipes().find(r=>r._key+'::'+r._i===key);return r?{name:r.name,snapshot:clone(r.state||{})}: {name:'現在の配合',snapshot:clone(state)}}
-function noteSeedVisibility(){const selected=pickedRecipe();const process=selected.snapshot.process||'biga';$('noteSeedBlock').hidden=process==='straight'}
-function updateDurations(){for(const [id,out] of [['noteSeedHours','noteSeedDuration'],['noteMatureHours','noteMatureDuration']]){const v=$(id).value;$(out).textContent=v!==''?('設定：'+Number(v)+'時間'):'未設定'}}
-function noteInputs(){const ids=['noteStarted','noteTemp','noteHumidity','noteMethod','noteSeedHours','noteMatureHours','noteRating','noteMemo'];return Object.fromEntries(ids.map(k=>[k,$(k).value]))}
-let noteVisible=5;
-function showNotes(){const root=$('noteList');root.replaceChildren();const query=($('noteSearch')?.value||'').trim().toLocaleLowerCase();const ratingFilter=$('noteRatingFilter')?.value||'';const all=read(NOTES_KEY,[]);const notes=all.filter(n=>{const x=n.inputs||{};const hay=[n.recipeName,x.noteStarted,x.noteMemo,x.noteMethod,x.noteTemp,x.noteHumidity].join(' ').toLocaleLowerCase();if(!hay.includes(query))return false;const rating=Number(x.noteRating)||0;return !ratingFilter||(ratingFilter==='unrated'?rating===0:rating>=Number(ratingFilter))});if(!notes.length){const p=document.createElement('p');p.className='note';p.textContent=all.length?'該当する仕込み記録がありません。':'まだ仕込み記録がありません。';root.append(p)}for(const note of notes.slice(0,noteVisible)){const div=document.createElement('div');div.className='note-entry';const head=document.createElement('strong');head.textContent=note.recipeName;const meta=document.createElement('small');meta.textContent=(note.inputs.noteStarted||'日時未記入').replace('T',' ')+' ／ '+(note.inputs.noteRating?'★'.repeat(Number(note.inputs.noteRating)):'未評価');const detail=document.createElement('p');const segments=[];if(note.inputs.noteTemp!=='')segments.push('室温 '+note.inputs.noteTemp+'℃');if(note.inputs.noteHumidity!=='')segments.push('湿度 '+note.inputs.noteHumidity+'%');if(note.inputs.noteMatureHours!=='')segments.push('本練り後 '+note.inputs.noteMatureHours+'時間');if(note.inputs.noteSeedHours!=='')segments.push('種 '+note.inputs.noteSeedHours+'時間');if(note.inputs.noteMethod)segments.push({room:'常温',cold:'冷蔵',mixed:'常温＋冷蔵'}[note.inputs.noteMethod]||'');detail.textContent=segments.join(' ／ ')+(note.inputs.noteMemo?'\n'+note.inputs.noteMemo:'');const actions=document.createElement('div');actions.className='actions';const load=listAction('edit','編集');load.onclick=()=>{for(const [k,v] of Object.entries(note.inputs))if($(k))$(k).value=v;$('noteRecipe').value='current';editingNoteId=note.id;noteSeedVisibility();$('noteSeedBlock').hidden=note.recipeSnapshot?.process==='straight';updateDurations();syncDurationPicks();$('saveNote').textContent='この記録を更新';$('noteStatus').textContent='編集中：'+note.recipeName;switchNoteView('new');window.scrollTo(0,0)};const del=listAction('trash','仕込み記録を削除',true);del.onclick=()=>{if(!confirm('この仕込み記録を削除しますか？'))return;saveNotes(read(NOTES_KEY,[]).filter(n=>n.id!==note.id));showNotes()};actions.append(load,del);const preview=document.createElement('div');preview.className='note-entry-preview';const snapshot=note.recipeSnapshot||{};preview.textContent=[snapshot.process?({biga:'ビガ法',poolish:'ポーリッシュ法',straight:'ストレート法'}[snapshot.process]||''):'',snapshot.totalFlour?'粉'+Math.round(Number(snapshot.totalFlour))+'g':'',snapshot.hydration!==undefined?'加水率'+snapshot.hydration+'%':'',note.inputs.noteSeedHours?'種'+note.inputs.noteSeedHours+'時間':'',note.inputs.noteMatureHours?'本練り後'+note.inputs.noteMatureHours+'時間':''].filter(Boolean).join(' · ');const more=document.createElement('details');const summary=document.createElement('summary');labelWithIcon(summary,'note','詳細・メモ');more.append(summary,detail,actions);div.append(head,meta,preview,more);root.append(div)}$('moreNotes').hidden=notes.length<=noteVisible;$('moreNotes').textContent='さらに'+Math.min(5,notes.length-noteVisible)+'件表示（残り'+(notes.length-noteVisible)+'件）'}
-function resetNoteForm(){editingNoteId=null;$('saveNote').textContent='仕込み記録を保存';for(const k of ['noteSeedHours','noteMatureHours','noteMemo','noteRating'])$(k).value='';updateDurations()}
-function initNotes(){if(!$('noteStarted').value)$('noteStarted').value=dateTimeLocal(new Date());refreshNoteRecipes();$('noteRecipe').onchange=noteSeedVisibility;for(const id of ['noteSeedHours','noteMatureHours'])$(id).oninput=updateDurations;$('saveNote').onclick=()=>{const inp=noteInputs();if(inp.noteHumidity!==''&&(+inp.noteHumidity<0||+inp.noteHumidity>100)){$('noteStatus').textContent='湿度は0〜100%で入力してください';return}for(const id of ['noteSeedHours','noteMatureHours'])if(inp[id]!==''&&(!Number.isFinite(Number(inp[id]))||Number(inp[id])<0||Number(inp[id])>1000)){$('noteStatus').textContent='発酵時間を確認してください';return}const chosen=pickedRecipe();const notes=read(NOTES_KEY,[]);const existing=editingNoteId?notes.find(n=>n.id===editingNoteId):null;const item={id:existing?.id||'note-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),recipeName:existing?.recipeName||chosen.name,recipeSnapshot:existing?.recipeSnapshot||chosen.snapshot,inputs:inp,savedAt:new Date().toISOString()};if(existing)notes.splice(notes.findIndex(n=>n.id===existing.id),1,item);else notes.unshift(item);try{saveNotes(notes);$('noteStatus').textContent='✓ 記録を保存しました';resetNoteForm();showNotes();switchNoteView('history')}catch(e){$('noteStatus').textContent='保存できませんでした。端末の空き容量とブラウザ設定を確認してください'}};showNotes();updateDurations()}
+
+function selectNoteRecipe(key) {
+ const field = $('noteRecipe');
+ field.value = [...field.options].some(option => option.value === key) ? key : 'current';
+}
+
+function refreshNoteRecipes() {
+ const select = $('noteRecipe');
+ const previous = select.value;
+ select.replaceChildren(new Option('現在の配合','current'));
+ for (const recipe of savedRecipes()) {
+  select.append(new Option(recipe.name + (recipe.legacy ? '（旧版）' : ''), recipeKey(recipe)));
+ }
+ selectNoteRecipe(previous);
+ noteSeedVisibility();
+}
+
+function pickedRecipe() {
+ const recipe = savedRecipes().find(entry => recipeKey(entry) === $('noteRecipe').value);
+ if (recipe) return {id:recipeKey(recipe), name:recipe.name, snapshot:clone(recipe.state || {})};
+ const flours = flourAmounts(calc()).map(([name]) => name).filter(Boolean).join('＋');
+ return {id:null, name:[flours, fmt(state.hydration) + '%', processLabels[state.process] + '法'].filter(Boolean).join('・'), snapshot:clone(state)};
+}
+
+function linkedNoteRecipe(note, recipes) {
+ if (note.recipeId !== undefined) return recipes.find(recipe => recipeKey(recipe) === note.recipeId);
+ const matches = recipes.filter(recipe => recipe.name === note.recipeName &&
+  JSON.stringify(recipe.state) === JSON.stringify(note.recipeSnapshot));
+ return matches.length === 1 ? matches[0] : undefined;
+}
+
+function noteSeedVisibility() {
+ const snapshot = editingNoteId
+  ? read(NOTES_KEY, []).find(note => note.id === editingNoteId)?.recipeSnapshot
+  : pickedRecipe().snapshot;
+ $('noteSeedBlock').hidden = snapshot?.process === 'straight';
+}
+
+function updateDurations() {
+ for (const [id,out] of [['noteSeedHours','noteSeedDuration'],['noteMatureHours','noteMatureDuration']]) {
+  const value = $(id).value;
+  $(out).textContent = value === '' ? '未設定' : '設定：' + fermentationDurationLabel(value, id === 'noteMatureHours');
+ }
+}
+
+function noteInputs() {
+ return Object.fromEntries(noteInputIds.map(id => [id, $(id).value]));
+}
+
+function noteStages(stages) {
+ return Array.isArray(stages) ? stages.filter(stage => stage && typeof stage === 'object' && !Array.isArray(stage)) : [];
+}
+
+function noteStageValues(validate = false) {
+ return [...$('noteStages').children].map(row => Object.fromEntries(
+  [...row.querySelectorAll('[data-stage-field]')].map(field => {
+   const value = field.value.trim();
+   if (validate && field.type === 'number' && (field.validity.badInput ||
+    (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < Number(field.min) || Number(value) > Number(field.max))))) {
+    field.focus();
+    throw new Error('工程の温度は−30〜65℃で入力してください');
+   }
+   return [field.dataset.stageField, value];
+  })
+ ));
+}
+
+function appendNoteStage(entry) {
+ const row = $('noteStageFields').content.firstElementChild.cloneNode(true);
+ for (const field of row.querySelectorAll('[data-stage-field]')) {
+  field.value = entry[field.dataset.stageField] ?? '';
+ }
+ row.querySelector('[data-stage-remove]').onclick = () => {
+  row.remove();
+  saveNoteDraft();
+  $('addNoteStage').focus();
+ };
+ $('noteStages').append(row);
+ return row;
+}
+
+function showRecipeNoteHistory(recipe) {
+ noteRecipeFilter = recipe;
+ noteVisible = 5;
+ $('noteSearch').value = '';
+ $('noteRatingFilter').value = '';
+ $('noteHistoryStatus').textContent = '';
+ selectTab('ferment');
+}
+
+function showNotes() {
+ const root = $('noteList');
+ root.replaceChildren();
+ const query = $('noteSearch').value.trim().toLocaleLowerCase();
+ const ratingFilter = $('noteRatingFilter').value;
+ const all = read(NOTES_KEY, []);
+ const recipes = savedRecipes();
+ const currentRecipeKey = noteRecipeFilter ? recipeKey(noteRecipeFilter) : null;
+ $('noteRecipeFilterBar').hidden = !noteRecipeFilter;
+ $('noteRecipeFilterName').textContent = noteRecipeFilter?.name || '';
+ const notes = all.filter(note => {
+  if (currentRecipeKey) {
+   const linked = linkedNoteRecipe(note, recipes);
+   if (!linked || recipeKey(linked) !== currentRecipeKey) return false;
+  }
+  const x = note.inputs;
+  const stageTerms = noteStages(note.stages).flatMap(entry => [stageLabels[entry.kind],entry.time,entry.observation]);
+  const searchable = [note.recipeName,x.noteStarted,x.noteMemo,x.noteMethod,x.noteTemp,x.noteHumidity,...stageTerms];
+  if (!searchable.join(' ').toLocaleLowerCase().includes(query)) return false;
+  const rating = Number(x.noteRating) || 0;
+  return !ratingFilter || (ratingFilter === 'unrated' ? rating === 0 : rating >= Number(ratingFilter));
+ });
+ if (!notes.length) {
+  const empty = document.createElement('p');
+  empty.className = 'note';
+  empty.textContent = all.length ? '該当する仕込み記録がありません。' : 'まだ仕込み記録がありません。';
+  root.append(empty);
+ }
+ for (const note of notes.slice(0, noteVisible)) {
+  const card = document.createElement('div');
+  card.className = 'note-entry';
+  const name = document.createElement('strong');
+  name.textContent = note.recipeName;
+  const meta = document.createElement('small');
+  const x = note.inputs;
+  meta.textContent = (x.noteStarted || '日時未記入').replace('T',' ') + ' ／ ' + (x.noteRating ? '★'.repeat(Number(x.noteRating)) : '未評価');
+  const preview = document.createElement('div');
+  preview.className = 'note-entry-preview';
+  const snapshot = note.recipeSnapshot || {};
+  preview.textContent = [
+   processLabels[snapshot.process],
+   snapshot.totalFlour ? '粉 ' + Math.round(Number(snapshot.totalFlour)) + 'g' : '',
+   snapshot.hydration !== undefined ? '加水 ' + snapshot.hydration + '%' : '',
+   x.noteSeedHours ? '種 ' + fermentationDurationLabel(x.noteSeedHours) : '',
+   x.noteMatureHours ? '本捏ね後 ' + fermentationDurationLabel(x.noteMatureHours,true) : '',
+  ].filter(Boolean).join(' · ');
+  const more = document.createElement('details');
+  const heading = document.createElement('summary');
+  labelWithIcon(heading,'note','詳細・メモ');
+  const detail = document.createElement('p');
+  detail.textContent = [
+   x.noteTemp ? '室温 ' + x.noteTemp + '℃' : '',
+   x.noteHumidity ? '湿度 ' + x.noteHumidity + '%' : '',
+   fermentationMethods[x.noteMethod],
+  ].filter(Boolean).join(' ／ ') + (x.noteMemo ? '\n' + x.noteMemo : '');
+  more.append(heading);
+  if (detail.textContent.trim()) more.append(detail);
+  const entries = noteStages(note.stages);
+  if (entries.length) {
+   const stages = document.createElement('ol');
+   stages.className = 'impasto-history';
+   for (const stage of entries) {
+    const item = document.createElement('li');
+    const title = document.createElement('strong');
+    title.textContent = stageLabels[stage.kind] || 'その他';
+    const facts = document.createElement('small');
+    facts.textContent = [
+     String(stage.time ?? '').replace('T',' '),
+     stage.dough !== '' && stage.dough != null ? '生地 ' + stage.dough + '℃' : '',
+     stage.ambient !== '' && stage.ambient != null ? '室温・庫内 ' + stage.ambient + '℃' : '',
+    ].filter(Boolean).join(' ／ ');
+    item.append(title, facts);
+    if (stage.observation) {
+     const observation = document.createElement('p');
+     observation.textContent = stage.observation;
+     item.append(observation);
+    }
+    stages.append(item);
+   }
+   more.append(stages);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  const edit = listAction('edit','編集');
+  edit.onclick = () => editSavedNote(note);
+  const remove = listAction('trash','仕込み記録を削除',true);
+  remove.onclick = () => {
+   if (!confirm('この仕込み記録を削除しますか？')) return;
+   saveNotes(read(NOTES_KEY,[]).filter(item => item.id !== note.id));
+   showNotes();
+  };
+  actions.append(edit,remove);
+  more.append(actions);
+  card.append(name,meta,preview,more);
+  root.append(card);
+ }
+ $('moreNotes').hidden = notes.length <= noteVisible;
+ $('moreNotes').textContent = 'さらに' + Math.min(5,notes.length - noteVisible) + '件表示（残り' + (notes.length - noteVisible) + '件）';
+}
+
+function loadNoteFields(inputs = {}, stages = []) {
+ for (const id of noteInputIds) $(id).value = inputs[id] ?? '';
+ if (!$('noteStarted').value) $('noteStarted').value = dateTimeLocal(new Date());
+ if (!$('noteMethod').value) $('noteMethod').value = 'room';
+ $('noteStages').replaceChildren();
+ for (const stage of noteStages(stages)) appendNoteStage(stage);
+ noteSeedVisibility();
+ syncDurationPicks();
+}
+
+function editSavedNote(note) {
+ editingNoteId = note.id;
+ const linked = linkedNoteRecipe(note, savedRecipes());
+ const field = $('noteRecipe');
+ field.querySelector('option[value="past-note"]')?.remove();
+ if (!linked) field.append(new Option(note.recipeName || '仕込み時の配合','past-note'));
+ selectNoteRecipe(linked ? recipeKey(linked) : 'past-note');
+ field.disabled = true;
+ $('cancelNoteEdit').hidden = false;
+ $('saveNote').textContent = 'この記録を更新';
+ $('noteStatus').textContent = '編集中：' + note.recipeName;
+ loadNoteFields(note.inputs,note.stages);
+ switchNoteView('new');
+ window.scrollTo(0,0);
+}
+
+function restoreNoteDraft() {
+ const draft = read(NOTE_DRAFT_KEY,null);
+ const legacyRecipe = savedRecipes().find(recipe => recipe._key + '::' + recipe._i === draft?.noteRecipe);
+ selectNoteRecipe(legacyRecipe ? recipeKey(legacyRecipe) : (draft?.noteRecipe ?? 'current'));
+ loadNoteFields(draft ?? {},draft?.stages);
+}
+
+function resetNoteForm() {
+ editingNoteId = null;
+ $('noteRecipe').querySelector('option[value="past-note"]')?.remove();
+ $('noteRecipe').disabled = false;
+ $('cancelNoteEdit').hidden = true;
+ $('saveNote').textContent = '仕込みを保存';
+ $('noteStatus').textContent = '';
+ restoreNoteDraft();
+}
+
+function saveNoteEntry() {
+ const input = noteInputs();
+ const status = $('noteStatus');
+ if (input.noteHumidity !== '' && (+input.noteHumidity < 0 || +input.noteHumidity > 100)) {
+  status.textContent = '湿度は0〜100%で入力してください';
+  return;
+ }
+ for (const id of ['noteSeedHours','noteMatureHours']) if (input[id] !== '' &&
+  (!Number.isFinite(Number(input[id])) || Number(input[id]) < 0 || Number(input[id]) > 1000)) {
+  status.textContent = '発酵時間を確認してください';
+  return;
+ }
+ let stages;
+ try { stages = noteStageValues(true); }
+ catch (error) { status.textContent = error.message; return; }
+ const notes = read(NOTES_KEY,[]);
+ const position = editingNoteId ? notes.findIndex(note => note.id === editingNoteId) : -1;
+ if (editingNoteId && position < 0) {
+  status.textContent = '編集中の仕込み記録が見つかりません';
+  return;
+ }
+ const existing = notes[position];
+ const chosen = pickedRecipe();
+ const recipes = savedRecipes();
+ const linked = existing && linkedNoteRecipe(existing,recipes);
+ const item = {
+  ...existing,
+  id:existing?.id || 'note-' + Date.now() + '-' + Math.random().toString(36).slice(2,8),
+  recipeId:existing
+   ? (existing.recipeId !== undefined ? existing.recipeId : linked ? recipeKey(linked) : null)
+   : chosen.id,
+  recipeName:existing?.recipeName || chosen.name,
+  recipeSnapshot:existing?.recipeSnapshot || chosen.snapshot,
+  inputs:input, stages, savedAt:new Date().toISOString(),
+ };
+ if (existing) notes[position] = item;
+ else notes.unshift(item);
+ try { saveNotes(notes); }
+ catch { status.textContent = '保存できませんでした。端末の空き容量とブラウザ設定を確認してください'; return; }
+ if (!existing) localStorage.removeItem(NOTE_DRAFT_KEY);
+ if (noteRecipeFilter && item.recipeId !== recipeKey(noteRecipeFilter)) noteRecipeFilter = null;
+ noteVisible = 5;
+ $('noteSearch').value = '';
+ $('noteRatingFilter').value = '';
+ resetNoteForm();
+ $('noteHistoryStatus').textContent = '✓ 仕込みを保存しました';
+ switchNoteView('history');
+ window.scrollTo(0,0);
+}
+
+function initNotes() {
+ if (!$('noteStarted').value) $('noteStarted').value = dateTimeLocal(new Date());
+ refreshNoteRecipes();
+ $('noteRecipe').onchange = noteSeedVisibility;
+ for (const id of ['noteSeedHours','noteMatureHours']) $(id).oninput = updateDurations;
+ $('saveNote').onclick = saveNoteEntry;
+ $('addNoteStage').onclick = () => {
+  const stages = noteStageValues();
+  const kind = stages.length ? nextStage[stages.at(-1).kind] || 'other' : 'kneaded';
+  const row = appendNoteStage({kind,time:dateTimeLocal(new Date())});
+  saveNoteDraft();
+  row.querySelector('[data-stage-field="kind"]').focus();
+ };
+ $('cancelNoteEdit').onclick = () => { resetNoteForm(); switchNoteView('history'); };
+ $('clearNoteRecipeFilter').onclick = () => { noteRecipeFilter = null; noteVisible = 5; showNotes(); };
+ showNotes();
+ updateDurations();
+}
 const BACKUP_V1_KEYS = ['ange-v3-current', 'ange-v3-adopted', 'ange-v3-recipes', NOTES_KEY];
 const BACKUP_KEYS = [...BACKUP_V1_KEYS, TEMP_KEY, NOTE_DRAFT_KEY];
 
@@ -615,7 +914,14 @@ function selectTab(tab) {
  if (tabChanged) window.scrollTo(0, 0);
 }
 $('noteHistoryTab').onclick=()=>switchNoteView('history');
-$('noteNewTab').onclick=()=>{if(editingNoteId){resetNoteForm();$('noteStatus').textContent=''}switchNoteView('new')};
+$('noteNewTab').onclick = () => {
+ $('noteHistoryStatus').textContent = '';
+ if (!editingNoteId && noteRecipeFilter && !read(NOTE_DRAFT_KEY,null)) {
+  selectNoteRecipe(recipeKey(noteRecipeFilter));
+  noteSeedVisibility();
+ }
+ switchNoteView('new');
+};
 $('quickSaveRecipe').onclick = () => {
  if (editingRecipe) {
   selectTab('saved');
@@ -657,7 +963,10 @@ const syncExtraRates = [0, 1].map(index => {
 });
 $('adopt').onclick=()=>{adopted[state.style]={hydration:state.hydration,salt:state.salt,oil:state.oil,extras:clone(state.extras),flours:clone(state.flours),process:state.process,bigaHyd:state.bigaHyd};localStorage.setItem('ange-v3-adopted',JSON.stringify(adopted));$('adoptStatus').textContent='✓ '+presets[state.style].name+'の配合を保存しました'};
 $('restorePreset').onclick=()=>{if(!confirm('このスタイルで採用した配合を初期値に戻しますか？'))return;delete adopted[state.style];localStorage.setItem('ange-v3-adopted',JSON.stringify(adopted));applyPreset(state.style);$('adoptStatus').textContent='初期配合に戻しました'};
-for(const button of document.querySelectorAll('[data-tab]'))button.onclick=()=>selectTab(button.dataset.tab);
+for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => {
+ if (button.dataset.tab === 'ferment') noteRecipeFilter = null;
+ selectTab(button.dataset.tab);
+};
 $('saveRecipe').onclick = () => saveRecipeEdit(false);
 $('overwriteRecipe').onclick = () => saveRecipeEdit(true);
 $('cancelRecipeEdit').onclick = () => { stopRecipeEditing(); showRecipes(); };
@@ -899,9 +1208,7 @@ const _originalSticky=updateStickySummary;updateStickySummary=function(c){_origi
 
 // RC1: duration choice controls; editable hours and visual selection.
 function syncDurationPicks(){document.querySelectorAll('.duration-picks').forEach(group=>{const id=group.dataset.target,input=$(id),v=input.value;const values=[...group.querySelectorAll('button[data-hours]')].map(b=>b.dataset.hours).filter(x=>x!=='custom');const isCustom=v!==''&&!values.includes(v);group.querySelectorAll('button').forEach(b=>b.classList.toggle('active',v!==''&&(isCustom?b.dataset.hours==='custom':b.dataset.hours===v)));$(id==='noteSeedHours'?'noteSeedCustom':'noteMatureCustom').hidden=!isCustom});updateDurations()}
-document.querySelectorAll('.duration-picks').forEach(group=>{const id=group.dataset.target;group.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.hours==='custom'){$(id==='noteSeedHours'?'noteSeedCustom':'noteMatureCustom').hidden=false;group.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));$(id).focus();return}$(id).value=b.dataset.hours;syncDurationPicks()}));$(id).addEventListener('input',()=>{const custom=$(id==='noteSeedHours'?'noteSeedCustom':'noteMatureCustom');custom.hidden=false;group.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.hours==='custom'));updateDurations()})});
-const _showNotes=showNotes;showNotes=function(){_showNotes();syncDurationPicks()};
-const _resetNoteForm=resetNoteForm;resetNoteForm=function(){_resetNoteForm();syncDurationPicks()};
+document.querySelectorAll('.duration-picks').forEach(group=>{const id=group.dataset.target;group.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.hours==='custom'){$(id==='noteSeedHours'?'noteSeedCustom':'noteMatureCustom').hidden=false;group.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));$(id).focus();return}$(id).value=b.dataset.hours;syncDurationPicks();saveNoteDraft()}));$(id).addEventListener('input',()=>{const custom=$(id==='noteSeedHours'?'noteSeedCustom':'noteMatureCustom');custom.hidden=false;group.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.hours==='custom'));updateDurations()})});
 // Collapsible headers show the live flour total and hydration.
 function updateSectionMetrics(c) {
  $('flourMetric').textContent = fmt(c.totalFlour) + 'g';
@@ -909,10 +1216,15 @@ function updateSectionMetrics(c) {
 }
 updateSectionMetrics(calc());syncDurationPicks();
 
-// RC2: preserve unfinished pizza-note input locally on this device.
-function saveNoteDraft(){try{localStorage.setItem(NOTE_DRAFT_KEY,JSON.stringify({...noteInputs(),noteRecipe:$('noteRecipe').value}))}catch(e){}}
-try{const draft=read(NOTE_DRAFT_KEY,null);if(draft){for(const [k,v] of Object.entries(draft)){if($(k)&&v!==undefined)$(k).value=v}noteSeedVisibility();syncDurationPicks()}}catch(e){}
-$('ferment').addEventListener('input',saveNoteDraft);$('ferment').addEventListener('change',saveNoteDraft);
-const _resetDraft=resetNoteForm;resetNoteForm=function(){_resetDraft();localStorage.removeItem(NOTE_DRAFT_KEY)};
+function saveNoteDraft() {
+ if (editingNoteId) return;
+ try {
+  localStorage.setItem(NOTE_DRAFT_KEY, JSON.stringify({...noteInputs(), noteRecipe:$('noteRecipe').value, stages:noteStageValues()}));
+ } catch {}
+}
+
+if (read(NOTE_DRAFT_KEY,null)) restoreNoteDraft();
+$('ferment').addEventListener('input',saveNoteDraft);
+$('ferment').addEventListener('change',saveNoteDraft);
 
 selectTab(document.querySelector(".tabs [data-tab].active")?.dataset.tab||"recipe");

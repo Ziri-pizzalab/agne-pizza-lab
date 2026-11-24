@@ -210,6 +210,12 @@ main { padding-block: 12px 16px; }
   transform: rotate(45deg);
 }
 .formula-section[open] > summary::after, .extra-materials[open] > summary::after { transform: rotate(225deg); }
+.italian-caption {
+  margin-inline-start: 3px;
+  color: var(--muted);
+  font: italic 500 12px Georgia, serif;
+  white-space: nowrap;
+}
 .section-metric { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--rose); white-space: nowrap; }
 .formula-section-content { border-top: 1px solid var(--line); padding: 5px 12px 12px; }
 .formula-control {
@@ -402,6 +408,31 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
 .note-stage h3 { display: flex; align-items: center; gap: 6px; margin-top: 0; }
 .note-stage h3 .ui-icon { color: var(--rose); }
 .note-editor-card > button.primary { width: 100%; }
+#cancelNoteEdit { margin-bottom: 8px; }
+.impasto-section {
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #faf6f0;
+}
+.impasto-entry {
+  min-inline-size: 0;
+  margin: 10px 0 0;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+.impasto-entry legend { padding: 0 4px; color: var(--rose); font-size: 13px; font-weight: 650; }
+.impasto-entry-top { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 7px; align-items: center; }
+.impasto-entry-top .field { margin: 0; }
+.impasto-history { list-style: none; padding: 0 0 0 10px; margin: 6px 0 12px; border-inline-start: 2px solid var(--agne-border); }
+.impasto-history li + li { padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--line); }
+.impasto-history p { margin: 4px 0 0; }
+.impasto-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 10px; padding-bottom: 8px; }
+.impasto-filter strong { flex: 1; overflow-wrap: anywhere; }
+.recipe-history-link { justify-self: start; }
 .duration-picks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
 .duration-picks button {
   padding: 4px 1px;
