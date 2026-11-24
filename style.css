@@ -9,6 +9,14 @@
   --muted: #705c5e;
   --rose: #934958;
   --accent: #a45050;
+  --lucia-tint: #eeedfa;
+  --lucia-control: #e2dff6;
+  --lucia-border: #777bb2;
+  --lucia-ink: #414778;
+  --agne-tint: #fae9ee;
+  --agne-control: #f1d9e2;
+  --agne-border: #ac5871;
+  --agne-ink: #793b51;
   --radius: 15px;
   --app-width: 600px;
 }
@@ -263,13 +271,15 @@ main { padding-block: 12px 16px; }
   padding: 7px;
   border-inline-start: 3px solid;
 }
-.flour-phase-seed { background: #fae9ee; border-inline-start-color: #ac5871; }
-.flour-phase-main { background: #eaf3f8; border-inline-start-color: #527b93; border-top: 1px solid var(--line); }
+.flour-phase-seed { background: var(--lucia-tint); border-inline-start-color: var(--lucia-border); }
+.flour-phase-main { background: var(--agne-tint); border-inline-start-color: var(--agne-border); border-top: 1px solid var(--line); }
 .flour-phase .flour-name-field { margin: 0; gap: 3px; }
-.flour-phase-seed .flour-name-field { color: #793b51; }
-.flour-phase-main .flour-name-field { color: #345a72; }
+.flour-phase-seed .flour-name-field { color: var(--lucia-ink); }
+.flour-phase-main .flour-name-field { color: var(--agne-ink); }
 .flour-phase .flour-name-field input { padding-inline: 7px; }
-.flour-phase-seed .number-stepper button { background: #f1d9e2; }
+.flour-phase-seed .number-stepper button { background: var(--lucia-control); color: var(--lucia-ink); }
+.flour-phase-seed .number-stepper-value input { color: var(--lucia-ink); }
+.flour-phase-seed .number-stepper-value:focus-within { outline-color: var(--lucia-ink); }
 .flour-phase-weight {
   display: flex;
   align-items: center;
@@ -278,8 +288,8 @@ main { padding-block: 12px 16px; }
   min-height: 44px;
   padding: 6px 9px;
   border-radius: 9px;
-  background: #dbeaf3;
-  color: #345a72;
+  background: var(--agne-control);
+  color: var(--agne-ink);
   font-weight: 700;
 }
 .flour-phase-weight span { font-size: 12px; }
@@ -330,6 +340,8 @@ main { padding-block: 12px 16px; }
 .summary-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; font-variant-numeric: tabular-nums; }
 .summary-table th, .summary-table td { border-bottom: 1px solid var(--line); padding: 7px 4px; text-align: right; }
 .summary-table thead th { font-size: 12px; background: var(--pink); }
+.summary-table thead .summary-phase-seed { background: var(--lucia-control); color: var(--lucia-ink); }
+.summary-table thead .summary-phase-main { background: var(--agne-control); color: var(--agne-ink); }
 .summary-table th:first-child { width: 34%; text-align: left; overflow-wrap: anywhere; }
 .summary-table .summary-flour-detail th { padding-inline-start: 14px; }
 .summary-table td:last-child { font-weight: 700; }
