@@ -140,7 +140,8 @@ main { padding-block: 12px 16px; }
   color: var(--rose);
   border-color: #d5adb4;
 }
-.formula-basics .method-switch { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 9px; }
+.dough-method-switch { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.formula-basics .dough-method-switch { margin-bottom: 9px; }
 .note-view-switch { margin-bottom: 10px; gap: 8px; }
 
 .ui-icon {
