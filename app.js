@@ -706,7 +706,7 @@ function updateStickySummary(c) {
  if (c.valid) {
   const rows = [
    ['粉 合計', c.seedFlour, c.totalFlour - c.seedFlour, c.totalFlour],
-   ...flourAmounts(c).map(([name, seed, main, total]) => [name || '名称未設定', seed || null, main || null, total]),
+   ...flourAmounts(c).map(([name, seed, main, total]) => [name || '名称未設定', seed || null, main || null, total, true]),
    ['水', c.seedWater, c.water - c.seedWater, c.water],
    ['塩', null, c.totalFlour * Number(state.salt) / 100, c.totalFlour * Number(state.salt) / 100],
    ['イースト', c.seedYeast, Number(state.yeast) - c.seedYeast, Number(state.yeast)],
@@ -716,8 +716,9 @@ function updateStickySummary(c) {
    rows.push(['オイル', null, oil, oil]);
   }
   for (const extra of c.extras) rows.push([extra.name, null, extra.grams, extra.grams]);
-  for (const [name, seed, main, total] of rows) {
+  for (const [name, seed, main, total, isFlourDetail] of rows) {
    const row = document.createElement('tr');
+   if (isFlourDetail) row.className = 'summary-flour-detail';
    const heading = document.createElement('th');
    heading.scope = 'row';
    heading.textContent = name;
