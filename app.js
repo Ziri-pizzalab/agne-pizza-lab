@@ -245,9 +245,7 @@ function flourRows() {
   header.className = 'formula-flour-header';
   const heading = document.createElement('strong');
   heading.textContent = title;
-  const ratio = document.createElement('span');
-  ratio.className = 'formula-flour-ratio';
-  header.append(heading, ratio);
+  header.append(heading);
   if (state.flours.length > 1) {
    const remove = document.createElement('button');
    remove.className = 'quiet';
@@ -343,8 +341,7 @@ function flourRows() {
   }
   host.append(row);
   return () => {
-   const {grams, pct} = calc().flours[index];
-   ratio.textContent = fmt(pct) + '%';
+   const {grams} = calc().flours[index];
    syncWeight(grams);
    if (seed) {
     seed.sync();
