@@ -247,9 +247,8 @@ function flourRows() {
   heading.textContent = title;
   header.append(heading);
   if (state.flours.length > 1) {
-   const remove = document.createElement('button');
-   remove.className = 'quiet';
-   remove.textContent = '×';
+   const remove = listAction('trash', '削除');
+   remove.classList.add('flour-remove');
    remove.setAttribute('aria-label', title + 'を削除');
    remove.onclick = () => {
     state.flours.splice(index, 1);
@@ -298,7 +297,7 @@ function flourRows() {
   }
   row.append(quantity);
   const straight = state.process === 'straight';
-  const mainName = flourNameField(flour, 'name', straight ? '使う粉の名前' : '本捏ねの粉の名前', '例：カプート');
+  const mainName = flourNameField(flour, 'name', straight ? '使う粉の名前' : '本捏ね', '粉の名前');
   let seed;
   let mainAmount;
   if (!straight) {
@@ -311,31 +310,26 @@ function flourRows() {
      prepareSeeds(); persist(); updateFlourRowsInPlace(); results();
     },
    });
-   const seedGroup = document.createElement('div');
-   seedGroup.className = 'flour-phase flour-phase-seed';
-   const seedName = flourNameField(flour, 'seedName', '発酵種の粉の名前', '空欄なら本捏ねと同じ');
-   const seedWeight = document.createElement('div');
-   seedWeight.className = 'formula-control formula-flour-quantity';
-   const seedLabel = document.createElement('span');
-   seedLabel.className = 'formula-control-label';
-   seedLabel.textContent = '発酵種の粉量';
-   seedWeight.append(seedLabel, seed.control);
-   seedGroup.append(seedName, seedWeight);
-   row.append(seedGroup);
+   const phases = document.createElement('div');
+   phases.className = 'flour-phases';
+   const seedRow = document.createElement('div');
+   seedRow.className = 'flour-phase flour-phase-seed';
+   const seedName = flourNameField(flour, 'seedName', '発酵種', '本捏ねと同じ');
+   seedRow.append(seedName, seed.control);
 
-   const mainGroup = document.createElement('div');
-   mainGroup.className = 'flour-phase';
-   const mainWeight = document.createElement('div');
-   mainWeight.className = 'formula-control formula-flour-quantity';
-   const mainLabel = document.createElement('span');
-   mainLabel.className = 'formula-control-label';
-   mainLabel.textContent = '本捏ねの粉量（自動）';
+   const mainRow = document.createElement('div');
+   mainRow.className = 'flour-phase flour-phase-main';
+   const automaticWeight = document.createElement('div');
+   automaticWeight.className = 'flour-phase-weight';
+   const hint = document.createElement('span');
+   hint.textContent = '自動';
+   hint.setAttribute('aria-hidden', 'true');
    mainAmount = document.createElement('output');
-   mainAmount.className = 'formula-auto-weight';
-   mainAmount.setAttribute('aria-label', title + 'の本捏ねの粉量');
-   mainWeight.append(mainLabel, mainAmount);
-   mainGroup.append(mainName, mainWeight);
-   row.append(mainGroup);
+   mainAmount.setAttribute('aria-label', title + 'の本捏ねの粉量（自動）');
+   automaticWeight.append(hint, mainAmount);
+   mainRow.append(mainName, automaticWeight);
+   phases.append(seedRow, mainRow);
+   row.append(phases);
   } else {
    row.append(mainName);
   }
