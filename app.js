@@ -244,7 +244,8 @@ function flourRows() {
   const header = document.createElement('div');
   header.className = 'formula-flour-header';
   const heading = document.createElement('strong');
-  heading.textContent = title;
+  heading.lang = 'it';
+  heading.textContent = 'Farina ' + (index + 1);
   header.append(heading);
   if (state.flours.length > 1) {
    const remove = listAction('trash', '削除');
