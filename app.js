@@ -10,7 +10,7 @@ const presets={
  mine:{name:'マイレシピ',hydration:65,salt:2.5,oil:0,extras:[],bake:'生地の厚みや窯に合わせて調整',source:'普段の配合を初期値に設定',url:''}
 };
 const defaultFlours=()=>[{id:1,name:'カプート',pct:100,seed:300}];
-const defaults={style:'mine',process:'biga',mode:'flour',totalFlour:660,bigaFlour:300,bigaHyd:50,extraFlour:360,hydration:65,salt:2.5,oil:0,ball:180,quantity:6,yeastType:'dry',yeast:1,prefermentYeast:1,extras:[{name:'',pct:0},{name:'',pct:0}],flours:defaultFlours(),stage:'biga',fermentMethod:'room',room:25,fridge:4,beforeCold:3};
+const defaults={style:'mine',process:'biga',mode:'flour',totalFlour:660,bigaFlour:300,bigaHyd:50,extraFlour:360,hydration:65,salt:2.5,oil:0,ball:180,quantity:6,secondBall:null,secondQuantity:1,yeastType:'dry',yeast:1,prefermentYeast:1,extras:[{name:'',pct:0},{name:'',pct:0}],flours:defaultFlours(),stage:'biga',fermentMethod:'room',room:25,fridge:4,beforeCold:3};
 function read(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback}catch{return fallback}}
 let state=clone(defaults),adopted=read('ange-v3-adopted',{});
 const old=null,savedV2=read('ange-v3-current',null);
@@ -20,6 +20,9 @@ else if(old&&typeof old==='object'){
  state.totalFlour=Number(state.bigaFlour)+Number(state.extraFlour);state.yeastType=old.yeastType==='fresh'?'fresh':'dry';state.yeast=round((Number(old.bigaFlour??300)+Number(old.extraFlour??360))*Number(old.yeast??.15)/100);state.prefermentYeast=state.yeast;
 }
 function normalise(){
+ const secondWeight = Number(state.secondBall);
+ state.secondBall = secondWeight >= 80 && secondWeight <= 400 ? Math.round(secondWeight) : null;
+ state.secondQuantity = Math.max(1, Math.min(24, Math.round(Number(state.secondQuantity)) || 1));
  state.extras=Array.from({length:2},(_,i)=>({name:String(state.extras?.[i]?.name||''),pct:Math.max(0,Math.min(50,Number(state.extras?.[i]?.pct)||0))}));
  const arr=Array.isArray(state.flours)&&state.flours.length?state.flours.slice(0,4):[{id:1,name:state.flourName||'カプート',pct:100,seed:Number(state.bigaFlour)||0}];
  state.flours=arr.map((f,i)=>({id:Number(f.id)||i+1,name:String(f.name||''),seedName:String(f.seedName??''),pct:Math.max(0,Number(f.pct)||0),seed:Math.max(0,Number(f.seed)||0)}));
@@ -31,10 +34,22 @@ function normalise(){
 }
 normalise();
 function persist(){try{localStorage.setItem('ange-v3-current',JSON.stringify(state))}catch(e){console.warn('Storage unavailable',e)}}
+function hasSecondBallSize() {
+ return state.mode === 'target' && state.secondBall !== null;
+}
+
+function targetDoughWeight() {
+ const first = Number(state.ball) * Number(state.quantity);
+ return hasSecondBallSize() ? first + state.secondBall * state.secondQuantity : first;
+}
+
 function flourTotal(){
  const extraPct=state.extras.filter(x=>x.name.trim()).reduce((s,x)=>s+Number(x.pct),0);
  const factor=1+(Number(state.hydration)+Number(state.salt)+Number(state.oil)+extraPct)/100;
- return state.mode==='target'?(Number(state.ball)*Number(state.quantity)-Number(state.yeast))/factor:Number(state.totalFlour);
+ if (state.mode !== 'target') return Number(state.totalFlour);
+ const grams = (targetDoughWeight() - Number(state.yeast)) / factor;
+ // A mixed batch should have enough dough for every requested ball after whole-gram rounding.
+ return hasSecondBallSize() ? Math.ceil(grams - 1e-9) : grams;
 }
 // Allocate integer grams: the final flour always absorbs rounding differences.
 function allocateFlourGrams(total,flours){
@@ -178,6 +193,30 @@ function stateNumberControl(host, label, key, min, max, step, unit, integer = fa
  });
 }
 
+function renderBallSizes() {
+ const add = $('addBallSize');
+ const second = $('secondBallSize');
+ add.hidden = state.mode !== 'target' || hasSecondBallSize();
+ second.hidden = !hasSecondBallSize();
+ $('secondBallControls').replaceChildren();
+ if (!hasSecondBallSize()) return;
+
+ stateNumberControl('secondBallControls','2種類目の1玉の重さ','secondBall',80,400,5,'g',true);
+ stateNumberControl('secondBallControls','2種類目の玉数','secondQuantity',1,24,1,'個',true);
+}
+
+function changeSecondBallSize(weight) {
+ state.secondBall = weight;
+ state.secondQuantity = 1;
+ prepareSeeds();
+ persist();
+ renderBallSizes();
+ updateFlourRowsInPlace();
+ results();
+ if (weight === null) $('addBallSize').focus();
+ else $('secondBallControls').querySelector('input').focus();
+}
+
 function redraw(){
  $('style').replaceChildren();for(const [k,p] of Object.entries(presets)){const o=document.createElement('option');o.value=k;o.textContent=p.name;$('style').append(o)}
  $('style').value=state.style;$('process').value=state.process;document.querySelectorAll('[data-process]').forEach(b=>{const active=b.dataset.process===state.process;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active))});$('yeastType').value=state.yeastType;
@@ -193,6 +232,7 @@ function redraw(){
  if (state.mode === 'flour') stateNumberControl('baseControls','総粉量','totalFlour',100,1800,1,'g',true);
  stateNumberControl('baseControls','1玉の重さ','ball',80,400,5,'g',true);
  if (state.mode === 'target') stateNumberControl('baseControls','玉数','quantity',1,24,1,'個',true);
+ renderBallSizes();
  $('prefermentBox').hidden = state.process === 'straight';
  $('prefermentTitle').textContent = state.process === 'poolish' ? 'ポーリッシュ' : 'ビガ';
  if (state.process !== 'straight') {
@@ -986,6 +1026,8 @@ function changeFormulaProcess(process) {
  redraw();
 }
 $('process').onchange = event => changeFormulaProcess(event.target.value);
+$('addBallSize').onclick = () => changeSecondBallSize(Number(state.ball) === 250 ? 180 : 250);
+$('removeBallSize').onclick = () => changeSecondBallSize(null);
 $('addFlour').onclick=()=>{if(state.flours.length>=4)return;const last=state.flours.at(-1);const newcomer=round(last.pct/2);last.pct=round(last.pct-newcomer);state.flours.push({id:Math.max(...state.flours.map(x=>x.id))+1,name:'',pct:newcomer,seed:0});prepareSeeds();persist();flourRows();results()};
 for(const button of document.querySelectorAll('[data-mode]'))button.onclick=()=>{if(state.mode==='target'&&button.dataset.mode==='flour'){const c=calc();state.totalFlour=Math.max(0,round(c.totalFlour))}state.mode=button.dataset.mode;prepareSeeds();persist();redraw()};
 $('yeastType').onchange=e=>{const next=e.target.value;if(next!==state.yeastType){const factor=next==='fresh'?3:1/3;state.yeast=round(state.yeast*factor);state.prefermentYeast=round(state.prefermentYeast*factor);state.yeastType=next;persist();redraw()}};
@@ -1086,9 +1128,15 @@ function updateStickySummary(c) {
  }
  const balls = Number(state.ball) > 0 ? Math.floor(c.dough / Number(state.ball)) : 0;
  const remainder = Number(state.ball) > 0 ? Math.max(0, c.dough - balls * Number(state.ball)) : 0;
- $('summaryBalls').textContent = c.valid && Number(state.ball) > 0
-  ? '生地玉 ' + fmt(Number(state.ball)) + 'g × ' + balls + '玉 ／ 余り ' + fmt(remainder) + 'g'
-  : '配合または生地玉の設定を確認してください';
+ if (!c.valid || Number(state.ball) <= 0) {
+  $('summaryBalls').textContent = '配合または生地玉の設定を確認してください';
+ } else if (hasSecondBallSize()) {
+  const remaining = Math.max(0, c.dough - targetDoughWeight());
+  $('summaryBalls').textContent = '生地玉 ' + fmt(Number(state.ball)) + 'g × ' + state.quantity +
+   '玉 ＋ ' + fmt(state.secondBall) + 'g × ' + state.secondQuantity + '玉 ／ 余り ' + fmt(remaining) + 'g';
+ } else {
+  $('summaryBalls').textContent = '生地玉 ' + fmt(Number(state.ball)) + 'g × ' + balls + '玉 ／ 余り ' + fmt(remainder) + 'g';
+ }
 }
 document.querySelectorAll('[data-process]').forEach(button=>button.addEventListener('click',()=>{const select=$('process');select.value=button.dataset.process;select.dispatchEvent(new Event('change',{bubbles:true}));document.querySelectorAll('[data-process]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button))})}));
 function toggleMaterialTable(show) {

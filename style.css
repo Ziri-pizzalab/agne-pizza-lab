@@ -471,3 +471,8 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
 .plan-reference { margin: 12px 0; padding: 10px; border-radius: 11px; background: var(--pink); }
 .plan-reference h3 { margin: 0; }
 .plan-reference p:last-of-type { margin-bottom: 3px; }
+
+.add-ball-size { margin-top: 8px; }
+.ball-size-card { margin-top: 10px; padding: 6px 10px 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--pink); }
+.ball-size-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.ball-size-header h3 { margin: 0; }
