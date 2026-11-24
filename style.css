@@ -269,17 +269,25 @@ main { padding-block: 12px 16px; }
 .formula-flour-header strong { margin-right: auto; font-size: 14px; }
 .formula-flour-header .flour-remove { min-width: 72px; padding: 0 8px; font-size: 12px; }
 .formula-flour-quantity { margin: 3px 0; }
-.flour-phases { margin-top: 8px; border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+.flour-phases { display: grid; gap: 6px; margin: 7px 0; }
 .flour-phase {
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid;
+  border-radius: 11px;
+}
+.flour-phase h3 { margin: 0 0 5px; }
+.flour-phase-seed h3 { color: var(--lucia-ink); }
+.flour-phase-main h3 { color: var(--agne-ink); }
+.flour-phase-row + .flour-phase-row { margin-top: 6px; }
+.flour-phase-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 160px);
   align-items: end;
   gap: 6px;
-  padding: 7px;
-  border-inline-start: 3px solid;
 }
 .flour-phase-seed { background: var(--lucia-tint); border-inline-start-color: var(--lucia-border); }
-.flour-phase-main { background: var(--agne-tint); border-inline-start-color: var(--agne-border); border-top: 1px solid var(--line); }
+.flour-phase-main { background: var(--agne-tint); border-inline-start-color: var(--agne-border); }
 .flour-phase .flour-name-field { margin: 0; gap: 3px; }
 .flour-phase-seed .flour-name-field { color: var(--lucia-ink); }
 .flour-phase-main .flour-name-field { color: var(--agne-ink); }
@@ -301,7 +309,8 @@ main { padding-block: 12px 16px; }
 }
 .flour-phase-weight span { font-size: 12px; }
 @media (max-width: 350px) {
-  .flour-phase { grid-template-columns: minmax(0, 1fr); }
+  .flour-phase-row { grid-template-columns: minmax(0, 1fr) minmax(0, 125px); }
+  .flour-phase .number-stepper { grid-template-columns: 30px minmax(0, 1fr) 30px; gap: 3px; }
 }
 .formula-auto-weight { border-radius: 9px; padding: 8px; background: #f1e8df; color: var(--muted); text-align: right; font-weight: 700; }
 .add-flour { display: inline-flex; align-items: center; gap: 5px; }

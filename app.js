@@ -266,25 +266,47 @@ function updateFlourRowsInPlace() {
  for (const sync of syncFlourRows) sync();
 }
 
-function flourNameField(flour, key, label, placeholder) {
+function flourNameField(flour, key, label, placeholder, accessibleLabel = label) {
  const field = document.createElement('label');
  field.className = 'field flour-name-field';
- field.textContent = label;
+ const caption = document.createElement('span');
+ caption.textContent = label;
+ if (label.startsWith('Farina')) caption.lang = 'it';
  const input = document.createElement('input');
  input.value = flour[key] ?? '';
  input.placeholder = placeholder;
+ input.setAttribute('aria-label', accessibleLabel);
  input.oninput = () => {
   flour[key] = input.value;
   persist();
   results();
  };
- field.append(input);
+ field.append(caption, input);
  return field;
 }
 
 function flourRows() {
  const host = $('flourRows');
  host.replaceChildren();
+ const straight = state.process === 'straight';
+ const totals = document.createElement('div');
+ const phases = document.createElement('div');
+ phases.className = 'flour-phases';
+ const seedGroup = document.createElement('section');
+ seedGroup.className = 'flour-phase flour-phase-seed';
+ const seedHeading = document.createElement('h3');
+ seedHeading.textContent = '発酵種';
+ seedGroup.append(seedHeading);
+ const mainGroup = document.createElement('section');
+ mainGroup.className = 'flour-phase flour-phase-main';
+ const mainHeading = document.createElement('h3');
+ mainHeading.textContent = '本捏ね';
+ mainGroup.append(mainHeading);
+ if (!straight) {
+  phases.append(seedGroup, mainGroup);
+  host.append(phases);
+ }
+ host.append(totals);
  syncFlourRows = state.flours.map((flour, index) => {
   const row = document.createElement('div');
   row.className = 'formula-flour';
@@ -345,8 +367,9 @@ function flourRows() {
    syncWeight = weight.sync;
   }
   row.append(quantity);
-  const straight = state.process === 'straight';
-  const mainName = flourNameField(flour, 'name', straight ? '使う粉の名前' : '本捏ね', '粉の名前');
+  const mainName = straight
+   ? flourNameField(flour, 'name', '使う粉の名前', '粉の名前')
+   : flourNameField(flour, 'name', heading.textContent, '粉の名前', title + 'の本捏ねの粉の名前');
   let seed;
   let mainAmount;
   if (!straight) {
@@ -359,15 +382,14 @@ function flourRows() {
      prepareSeeds(); persist(); updateFlourRowsInPlace(); results();
     },
    });
-   const phases = document.createElement('div');
-   phases.className = 'flour-phases';
    const seedRow = document.createElement('div');
-   seedRow.className = 'flour-phase flour-phase-seed';
-   const seedName = flourNameField(flour, 'seedName', '発酵種', '本捏ねと同じ');
+   seedRow.className = 'flour-phase-row';
+   const seedName = flourNameField(flour, 'seedName', heading.textContent, '本捏ねと同じ', title + 'の発酵種の粉の名前');
    seedRow.append(seedName, seed.control);
+   seedGroup.append(seedRow);
 
    const mainRow = document.createElement('div');
-   mainRow.className = 'flour-phase flour-phase-main';
+   mainRow.className = 'flour-phase-row';
    const automaticWeight = document.createElement('div');
    automaticWeight.className = 'flour-phase-weight';
    const hint = document.createElement('span');
@@ -377,12 +399,11 @@ function flourRows() {
    mainAmount.setAttribute('aria-label', title + 'の本捏ねの粉量（自動）');
    automaticWeight.append(hint, mainAmount);
    mainRow.append(mainName, automaticWeight);
-   phases.append(seedRow, mainRow);
-   row.append(phases);
+   mainGroup.append(mainRow);
   } else {
    row.append(mainName);
   }
-  host.append(row);
+  totals.append(row);
   return () => {
    const {grams} = calc().flours[index];
    syncWeight(grams);
