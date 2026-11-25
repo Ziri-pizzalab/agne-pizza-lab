@@ -1,21 +1,22 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#faf6f0"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Ange Pizza Lab"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-192.png"><link rel="stylesheet" href="style.css?v=3027"><title>Ange Pizza Lab</title></head><body>
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#faf6f0"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Ange Pizza Lab"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-192.png"><link rel="stylesheet" href="style.css?v=3028"><title>Ange Pizza Lab</title></head><body>
 <header class="app-header" id="pageTop">
   <div class="header-inner">
     <div class="brand"><img src="icon-180.png" alt="" class="brand-icon"><h1>Ange Pizza Lab</h1></div>
     <details class="settings-menu" id="settingsMenu">
       <summary aria-label="設定" title="設定"><span class="ui-icon ui-icon-gear" aria-hidden="true"></span></summary>
       <div class="settings-actions">
-        <button id="openTempSettings" type="button" class="quiet">温度設定</button>
-        <button id="reset" type="button" class="quiet">配合を初期化</button>
+        <button id="openFlourNames" type="button" class="quiet">粉の名称管理</button>
+        <button id="openBackup" type="button" class="quiet">バックアップ・復元</button>
+        <span class="note app-version">Ver.3.0</span>
       </div>
     </details>
   </div>
 </header>
 <main>
 <nav class="tabs" aria-label="画面の切り替え">
-  <button type="button" data-tab="plan" class="active" aria-pressed="true"><span class="ui-icon ui-icon-clock" aria-hidden="true"></span><span>仕込み予定</span></button>
-  <button type="button" data-tab="recipe" aria-pressed="false"><span class="ui-icon ui-icon-scale" aria-hidden="true"></span><span>配合</span></button>
-  <button type="button" data-tab="saved" aria-pressed="false"><span class="ui-icon ui-icon-book" aria-hidden="true"></span><span>レシピ帳</span></button>
+  <button type="button" data-tab="plan" class="active" aria-pressed="true"><span class="ui-icon ui-icon-clock" aria-hidden="true"></span><span lang="it">Agenda</span></button>
+  <button type="button" data-tab="recipe" aria-pressed="false"><svg class="tab-symbol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16M5 4l2 3h10l2-3M5 21h14l-1-14H6z"/><circle cx="12" cy="13" r="3.5"/><path d="m12 13 1-1.5"/></svg><span lang="it">Impasto</span></button>
+  <button type="button" data-tab="saved" aria-pressed="false"><svg class="tab-symbol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="15" height="17" rx="2"/><path d="M8 2v4m4-4v4m4-4v4m-8 4 3 7 6-5q-3.5-3.4-9-2z"/><circle cx="11" cy="12.5" r=".45"/><circle cx="13.4" cy="12.5" r=".45"/></svg><span lang="it">Diario</span></button>
 </nav>
 <section id="plan" class="panel active" aria-label="仕込み予定">
   <form id="planForm" class="card">
@@ -30,7 +31,7 @@
     </div>
     <label class="field"><span id="planStartLabel">捏ね始め</span><input id="planStart" type="datetime-local" required></label>
     <label class="field" id="planMainField"><span>本捏ね開始予定 <small class="note">任意</small></span><input id="planMain" type="datetime-local"></label>
-    <label class="field">焼き始め予定<input id="planBake" type="datetime-local" required></label>
+    <label class="field">焼き始め予定 <small class="note">任意</small><input id="planBake" type="datetime-local"></label>
     <div class="two-col">
       <label class="field">室温（℃）<input id="planRoom" type="number" min="-10" max="50" step="0.1" inputmode="decimal" required></label>
       <label class="field">湿度（%）<input id="planHumidity" type="number" min="0" max="100" step="1" inputmode="numeric"></label>
@@ -43,12 +44,18 @@
     <p class="note" id="planStatus" role="status"></p>
     <button type="submit" class="primary">予定を確認して配合へ</button>
   </form>
+  <section id="agendaStages" class="card" hidden aria-labelledby="agendaStagesTitle">
+    <h2 id="agendaStagesTitle">工程</h2>
+    <div id="agendaStageList"></div>
+    <p id="agendaStatus" class="note" role="status"></p>
+    <button id="recordAgendaInDiario" type="button" class="quiet" disabled>Diarioで記録する</button>
+  </section>
 </section>
 <section id="recipe" class="panel" aria-label="配合">
   <section class="card formula-basics">
     <div class="formula-heading">
       <h2>配合</h2>
-      <button id="planFromFormula" type="button" class="quiet icon-action" hidden><span class="ui-icon ui-icon-clock" aria-hidden="true"></span><span id="planFormulaWindow"></span></button>
+      <a href="#planReference" id="planFromFormula" class="plan-reference-link" hidden><span class="ui-icon ui-icon-clock" aria-hidden="true"></span>発酵の参考</a>
     </div>
     <select id="style" hidden aria-hidden="true"></select>
     <p class="note" id="styleSource" hidden></p>
@@ -81,11 +88,11 @@
     <summary><span class="ui-icon ui-icon-flour" aria-hidden="true"></span><span>粉のブレンド</span><span class="section-metric" id="flourMetric"></span></summary>
     <div class="formula-section-content">
       <div id="flourRows"></div>
-      <button id="addFlour" type="button" class="quiet icon-action icon-only add-flour" aria-label="粉を追加" title="粉を追加"><span class="ui-icon ui-icon-plus" aria-hidden="true"></span></button>
-      <div id="prefermentBox"><h3 id="prefermentTitle">ビガ</h3><div id="prefermentControls"></div></div>
+      <div id="prefermentBox"><div id="prefermentControls"></div></div>
+      <datalist id="flourNameOptions"></datalist>
     </div>
   </details>
-  <details class="card formula-section">
+  <details id="ratioSection" class="card formula-section">
     <summary><span class="ui-icon ui-icon-drop" aria-hidden="true"></span><span>加水・塩・イースト</span><span id="hydrationMetric" class="section-metric"></span></summary>
     <div class="formula-section-content">
       <div id="ratioControls"></div>
@@ -122,7 +129,7 @@
     <button id="saveRecipe" class="quiet" type="button">別名で保存</button>
     <button id="cancelRecipeEdit" class="quiet" type="button">編集をやめる</button>
   </div>
-</div><div id="recipeEditStatus" class="note" role="status"></div><div class="list-tools"><input id="recipeSearch" type="search" placeholder="レシピを検索" aria-label="レシピを検索"><select id="recipeSort" aria-label="レシピの並び順"><option value="new">新しい順</option><option value="name">名前順</option></select></div><div id="recipeList"></div><button id="moreRecipes" class="quiet list-more" hidden>さらに5件表示</button><button id="allNoteHistory" type="button" class="quiet icon-action"><span class="ui-icon ui-icon-note" aria-hidden="true"></span>すべての仕込み履歴</button><details class="backup-settings"><summary><span class="ui-icon ui-icon-save" aria-hidden="true"></span>バックアップ・復元</summary><button id="exportBackup" class="quiet">バックアップを書き出す</button><label class="restore-label">バックアップから復元<input id="importBackup" type="file" accept="application/json,.json"></label><p id="backupStatus" class="note" role="status"></p></details></div>
+</div><div id="recipeEditStatus" class="note" role="status"></div><div class="list-tools recipe-list-tools"><input id="recipeSearch" type="search" placeholder="レシピを検索" aria-label="レシピを検索"><select id="recipeSort" aria-label="レシピの並び順"><option value="new">新しい順</option><option value="name">名前順</option></select><button id="allNoteHistory" type="button" class="quiet" aria-label="すべての仕込み履歴">全履歴</button></div><div id="recipeList"></div><button id="moreRecipes" class="quiet list-more" hidden>さらに5件表示</button></div>
 <section id="ferment" hidden aria-label="仕込み記録"><button id="backToRecipes" type="button" class="quiet icon-action">レシピ一覧に戻る</button><div class="note-view-switch" role="group" aria-label="仕込み記録の切り替え"><button type="button" id="noteHistoryTab" class="active" aria-pressed="true"><span class="ui-icon ui-icon-note" aria-hidden="true"></span><span>履歴</span></button><button type="button" id="noteNewTab" aria-label="新規仕込み記録を追加" title="新規記録" aria-pressed="false"><span class="ui-icon ui-icon-plus" aria-hidden="true"></span><span>記録する</span></button></div><div class="card note-editor-card" hidden><h2>仕込み記録 <span class="italian-caption" lang="it" aria-hidden="true">Impasto</span></h2>
 <div class="field"><label for="noteRecipe">レシピ</label><select id="noteRecipe"><option value="current">現在の配合</option></select></div>
 <div class="note-datetime-row"><div class="field"><label for="noteStarted">仕込み日時</label><input id="noteStarted" type="datetime-local"></div></div><div class="two-col"><div class="field"><label for="noteTemp">室温（℃）</label><input id="noteTemp" type="number" min="-10" max="50" step="0.1" placeholder="25"></div>
@@ -133,7 +140,9 @@
 </section>
 <div id="noteSeedBlock" class="note-stage"><h3><span class="ui-icon ui-icon-flour" aria-hidden="true"></span>発酵種</h3><div class="duration-picks" data-target="noteSeedHours"><button type="button" data-hours="8">8時間</button><button type="button" data-hours="16">16時間</button><button type="button" data-hours="24">24時間</button><button type="button" data-hours="custom">手入力</button></div><div class="field duration-custom" id="noteSeedCustom" hidden><label for="noteSeedHours">発酵種の時間（時間）</label><input id="noteSeedHours" type="number" min="0" max="500" step="0.5" inputmode="decimal" placeholder="例：12"></div><p id="noteSeedDuration" class="duration-label">未設定</p></div>
 <div class="note-stage"><h3><span class="ui-icon ui-icon-clock" aria-hidden="true"></span>本練り後</h3><div class="duration-picks" data-target="noteMatureHours"><button type="button" data-hours="24">1日</button><button type="button" data-hours="48">2日</button><button type="button" data-hours="72">3日</button><button type="button" data-hours="custom">手入力</button></div><div class="field duration-custom" id="noteMatureCustom" hidden><label for="noteMatureHours">熟成時間（時間）</label><input id="noteMatureHours" type="number" min="0" max="1000" step="0.5" inputmode="decimal" placeholder="例：36"></div><p id="noteMatureDuration" class="duration-label">未設定</p></div>
-<div class="field"><label for="noteRating">出来栄え</label><select id="noteRating"><option value="">未評価</option><option value="1">★☆☆☆☆（1）</option><option value="2">★★☆☆☆（2）</option><option value="3">★★★☆☆（3）</option><option value="4">★★★★☆（4）</option><option value="5">★★★★★（5）</option></select></div><div class="field"><label for="noteMemo">メモ</label><textarea id="noteMemo" rows="4"></textarea></div>
+<div class="field"><label for="noteRating">出来栄え</label><select id="noteRating"><option value="">未評価</option><option value="1">★☆☆☆☆（1）</option><option value="2">★★☆☆☆（2）</option><option value="3">★★★☆☆（3）</option><option value="4">★★★★☆（4）</option><option value="5">★★★★★（5）</option></select></div><div class="field"><label for="noteBakeCondition">焼成条件</label><input id="noteBakeCondition" placeholder="例：窯300℃、3分"></div>
+<div class="field"><label for="noteMemo">感想・メモ</label><textarea id="noteMemo" rows="3"></textarea></div>
+<div class="field"><label for="noteImprovement">次回の改善点</label><textarea id="noteImprovement" rows="2"></textarea></div>
 <p id="noteStatus" class="note" role="status"></p>
 <button id="cancelNoteEdit" type="button" class="quiet" hidden>編集をやめる</button>
 <button id="saveNote" type="button" class="primary">仕込みを保存</button></div>
@@ -149,6 +158,9 @@
       <div class="field">
         <select data-stage-field="kind" aria-label="工程名">
           <option value="starter">発酵種の仕込み</option>
+          <option value="mixStart">捏ね始め</option>
+          <option value="mainStart">本捏ね開始</option>
+          <option value="bake">焼き始め</option>
           <option value="kneaded">捏ね上げ</option>
           <option value="chill">冷蔵庫に入れる</option>
           <option value="unchill">冷蔵庫から出す</option>
@@ -186,7 +198,20 @@
   </div>
   <label class="field">メモ<textarea data-condition="memo" rows="2"></textarea></label>
 </template>
-<dialog id="tempSettingsModal" class="recipe-modal"><form method="dialog"><h2>温度の初期設定</h2><p class="note">レシピ追加と発酵の参考表示に利用します。</p><div class="field"><label for="defaultRoom">標準室温（℃）</label><input id="defaultRoom" type="number" min="-10" max="50" step="0.1"></div><div class="field"><label for="defaultFridge">冷蔵庫内温度（℃）</label><input id="defaultFridge" type="number" min="-5" max="20" step="0.1"></div><p id="tempError" class="warning" hidden></p><div class="actions"><button id="tempCancel" type="button" class="quiet">キャンセル</button><button id="tempSave" type="button" class="primary">設定を保存</button></div></form></dialog><dialog id="recipeModal" class="recipe-modal"><form method="dialog" id="recipeModalForm" novalidate><h2>レシピを保存</h2><div class="field"><label for="modalRecipeName">レシピ名</label><input id="modalRecipeName" placeholder="例：いつものビガ生地" required></div><div id="newRecipeConditions"></div><p id="modalError" class="warning" role="status" hidden></p><div class="actions"><button id="modalCancel" type="button" class="quiet">キャンセル</button><button id="modalSkip" type="button" class="quiet">条件をスキップして保存</button><button id="modalSave" type="submit" class="primary">保存する</button></div></form></dialog><aside id="stickySummary" class="sticky-summary" aria-label="配合結果">
+<dialog id="flourNamesDialog" class="recipe-modal" aria-labelledby="flourNamesTitle">
+  <h2 id="flourNamesTitle">粉の名称管理</h2>
+  <div id="flourNamesList"></div>
+  <p id="flourNamesStatus" class="note" role="status"></p>
+  <form method="dialog"><button class="quiet">閉じる</button></form>
+</dialog>
+<dialog id="backupDialog" class="recipe-modal" aria-labelledby="backupTitle">
+  <h2 id="backupTitle">バックアップ・復元</h2>
+  <button id="exportBackup" type="button" class="quiet">バックアップを書き出す</button>
+  <label class="restore-label">バックアップから復元<input id="importBackup" type="file" accept="application/json,.json"></label>
+  <p id="backupStatus" class="note" role="status"></p>
+  <form method="dialog"><button class="quiet">閉じる</button></form>
+</dialog>
+<dialog id="recipeModal" class="recipe-modal"><form method="dialog" id="recipeModalForm" novalidate><h2>レシピを保存</h2><div class="field"><label for="modalRecipeName">レシピ名</label><input id="modalRecipeName" placeholder="例：いつものビガ生地" required></div><div id="newRecipeConditions"></div><p id="modalError" class="warning" role="status" hidden></p><div class="actions"><button id="modalCancel" type="button" class="quiet">キャンセル</button><button id="modalSkip" type="button" class="quiet">条件をスキップして保存</button><button id="modalSave" type="submit" class="primary">保存する</button></div></form></dialog><aside id="stickySummary" class="sticky-summary" aria-label="配合結果">
 <div class="summary-bar">
   <div class="summary-total"><span>総生地量</span><strong id="summaryWeight">—</strong></div>
   <button type="button" id="summaryToggle" class="dock-action quiet" aria-expanded="false" aria-controls="summaryDetails"><span class="ui-icon ui-icon-table" aria-hidden="true"></span><span>材料</span></button>
@@ -195,4 +220,4 @@
 <p id="summaryIngredients" class="summary-message" role="status" hidden></p>
 <div id="summaryDetails" hidden><table class="summary-table" aria-label="材料内訳（g）">
 <thead><tr><th scope="col">材料（g）</th><th id="summarySeedHeading" class="summary-phase-seed" scope="col">発酵種</th><th class="summary-phase-main" scope="col">本捏ね</th><th scope="col">合計</th></tr></thead>
-<tbody id="summaryMaterialRows"></tbody></table><div class="summary-balls" id="summaryBalls"></div><div class="summary-detail-title">発酵の参考時間</div><div id="referenceMethodSwitch" class="method-switch" role="group" aria-label="発酵方法"><button type="button" class="ferment-choice" data-ferment="room">常温</button><button type="button" class="ferment-choice" data-ferment="mixed">常温＋冷蔵庫</button></div><div id="fermentReference" class="note" aria-live="polite"></div></div></aside><footer class="app-footer"><a href="#pageTop">先頭へ</a></footer><script defer src="app.js?v=3027"></script></body></html>
+<tbody id="summaryMaterialRows"></tbody></table><div class="summary-balls" id="summaryBalls"></div><div class="summary-detail-title">発酵の参考時間</div><div id="referenceMethodSwitch" class="method-switch" role="group" aria-label="発酵方法"><button type="button" class="ferment-choice" data-ferment="room">常温</button><button type="button" class="ferment-choice" data-ferment="mixed">常温＋冷蔵庫</button></div><div id="fermentReference" class="note" aria-live="polite"></div></div></aside><footer class="app-footer"><a href="#pageTop">先頭へ</a></footer><script defer src="app.js?v=3028"></script></body></html>

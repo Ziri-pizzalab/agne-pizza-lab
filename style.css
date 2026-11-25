@@ -506,10 +506,8 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
   margin-bottom: 8px;
 }
 .formula-heading h2 { flex: none; margin: 0; }
-#planFromFormula { min-width: 0; padding-inline: 8px; text-align: right; font-size: 13px; }
 #planFromFormula .ui-icon { flex: none; }
 #backToRecipes { margin-bottom: 8px; }
-#allNoteHistory { margin: 8px 0; }
 .plan-reference { margin: 12px 0; padding: 10px; border-radius: 11px; background: var(--pink); }
 .plan-reference h3 { margin: 0; }
 .plan-reference p:last-of-type { margin-bottom: 3px; }
@@ -527,3 +525,24 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
 .ball-size-row .number-stepper-value input { text-align: center; }
 #removeBallSize { width: 36px; }
 .add-ball-size { margin-top: 5px; }
+
+.tab-symbol { width: 20px; height: 20px; }
+.tabs button { white-space: nowrap; }
+.app-version { padding: 2px 8px; }
+.recipe-list-tools { grid-template-columns: minmax(0, 1fr) auto auto; align-items: stretch; gap: 5px; }
+.recipe-list-tools > :is(input,select,button) { padding-inline: 6px; }
+.recipe-list-tools > :is(select,button) { font-size: 13px; white-space: nowrap; }
+.recipe-list-tools input { min-width: 0; }
+.flour-phase-row-heading { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; min-height: 23px; font-size: 13px; }
+.flour-phase-row-heading > button { width: 36px; min-height: 35px; }
+.flour-phase-row { align-items: center; column-gap: 6px; row-gap: 3px; }
+.flour-phase-row input { min-width: 0; }
+.flour-phase-seed .flour-phase-row-heading { color: var(--lucia-ink); }
+.flour-phase-main .flour-phase-row-heading { color: var(--agne-ink); }
+.flour-phase > .icon-action { margin-top: 6px; }
+.flour-phase #prefermentControls .formula-control { margin-bottom: 0; }
+.flour-name-edit { display: grid; grid-template-columns: minmax(0,1fr) 44px 44px; gap: 4px; margin-bottom: 6px; }
+.plan-reference-link { display: inline-flex; align-items: center; gap: 4px; color: var(--rose); font-size: 13px; }
+.agenda-step { border-top: 1px solid var(--line); padding: 8px; }
+.agenda-step small { display: block; color: var(--muted); font-size: 13px; }
+.next-agenda-step { background: var(--pink); border-radius: 9px; color: var(--rose); }

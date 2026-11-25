@@ -29,6 +29,14 @@ function normalise(){
  // Preserve existing proportions, but always make the last flour the 100% remainder.
  if(state.flours.length===1)state.flours[0].pct=100;
  else{let used=0;for(let i=0;i<state.flours.length-1;i++){state.flours[i].pct=round(Math.min(state.flours[i].pct,100-used),8);used+=state.flours[i].pct}state.flours.at(-1).pct=round(100-used,8)}
+ if (state.flourGroups) {
+  for (const phase of ['seed','main']) {
+   const rows = state.flourGroups[phase];
+   state.flourGroups[phase] = Array.isArray(rows) && rows.length
+    ? rows.map(row => ({name:String(row?.name ?? ''),grams:Math.max(0,Math.round(Number(row?.grams) || 0))}))
+    : [{name:'',grams:0}];
+  }
+ }
  state.stage=state.process==='straight'?'final':state.stage==='final'?'final':'biga';
  state.fermentMethod=['room','cold','mixed'].includes(state.fermentMethod)?state.fermentMethod:'room';
 }
@@ -64,14 +72,58 @@ function allocateFlourGrams(total,flours){
  result.push(remaining);
  return result;
 }
+function phaseWeights(rows, budget, remainder) {
+ let available = Math.max(0, budget);
+ return rows.map((row, index) => {
+  const end = remainder && index === rows.length - 1;
+  const grams = end ? available : Math.min(available, Math.max(0, Math.round(Number(row.grams) || 0)));
+  available -= grams;
+  return {name:String(row.name ?? ''), grams};
+ });
+}
+
+function independentPhaseWeights(total, groups = state.flourGroups) {
+ const seed = state.process === 'straight' ? [] : phaseWeights(groups.seed, total, false);
+ const mainTotal = total - seed.reduce((sum, row) => sum + row.grams, 0);
+ return {seed, main:phaseWeights(groups.main, mainTotal, true)};
+}
+
+function currentFlourGroups() {
+ if (state.flourGroups) return state.flourGroups;
+ const weights = allocateFlourGrams(flourTotal(), state.flours);
+ const seed = state.flours.map((row, i) => ({
+  name:row.seedName.trim() || (row.seed ? row.name : ''), grams:Math.min(weights[i], row.seed),
+ })).filter(row => row.grams || row.name);
+ const main = state.flours.map((row, i) => ({
+  name:row.name, grams:weights[i] - (state.process === 'straight' ? 0 : Math.min(weights[i], row.seed)),
+ })).filter(row => row.grams || row.name);
+ return {seed:seed.length ? seed : [{name:'',grams:0}], main:main.length ? main : [{name:'',grams:0}]};
+}
+
+function editableFlourGroups() {
+ return state.flourGroups ??= currentFlourGroups();
+}
+
 function prepareSeeds(){
  const total=flourTotal();if(!Number.isFinite(total))return;
+ if (state.flourGroups) {
+  const phases = independentPhaseWeights(Math.round(total));
+  for (const phase of ['seed','main']) phases[phase].forEach((row,i) => {
+   if (phase === 'seed' || i < phases.main.length - 1) state.flourGroups[phase][i].grams = row.grams;
+  });
+  state.bigaFlour = phases.seed.reduce((sum,row) => sum + row.grams,0);
+  return;
+ }
  const weights=allocateFlourGrams(total,state.flours);
  state.flours.forEach((f,i)=>{f.seed=Math.max(0,Math.min(Number(f.seed)||0,weights[i]))})
  state.bigaFlour=state.process==='straight'?0:round(state.flours.reduce((s,f)=>s+f.seed,0),5);
 }
 function calc(){
- const totalFlour=Math.round(flourTotal());const weights=allocateFlourGrams(totalFlour,state.flours);const flours=state.flours.map((f,i)=>({...f,grams:weights[i],pct:totalFlour?weights[i]/totalFlour*100:0}));
+ const totalFlour=Math.round(flourTotal());
+ const weights=allocateFlourGrams(totalFlour,state.flours);
+ const phases=state.flourGroups ? independentPhaseWeights(totalFlour) : null;
+ const flours=phases ? [...phases.seed.map(row => ({...row,seed:row.grams})),...phases.main.map(row => ({...row,seed:0}))]
+  : state.flours.map((f,i)=>({...f,grams:weights[i],pct:totalFlour?weights[i]/totalFlour*100:0}));
  const seedFlour=state.process==='straight'?0:flours.reduce((s,f)=>s+f.seed,0);
  const seedWater=seedFlour*Number(state.bigaHyd)/100;
  const water=totalFlour*Number(state.hydration)/100;
@@ -242,7 +294,6 @@ function redraw(){
  }
  renderBallSizes();
  $('prefermentBox').hidden = state.process === 'straight';
- $('prefermentTitle').textContent = state.process === 'poolish' ? 'ポーリッシュ' : 'ビガ';
  if (state.process !== 'straight') {
   const poolish = state.process === 'poolish';
   stateNumberControl('prefermentControls','種の加水率','bigaHyd',poolish ? 80 : 40,poolish ? 120 : 80,1,'%',true);
@@ -266,155 +317,109 @@ function updateFlourRowsInPlace() {
  for (const sync of syncFlourRows) sync();
 }
 
-function flourNameField(flour, key, label, placeholder, accessibleLabel = label) {
- const field = document.createElement('label');
- field.className = 'field flour-name-field';
- const caption = document.createElement('span');
- caption.textContent = label;
- if (label.startsWith('Farina')) caption.lang = 'it';
- const input = document.createElement('input');
- input.value = flour[key] ?? '';
- input.placeholder = placeholder;
- input.setAttribute('aria-label', accessibleLabel);
- input.oninput = () => {
-  flour[key] = input.value;
-  persist();
-  results();
- };
- field.append(caption, input);
- return field;
+function commitFlourChange() {
+ prepareSeeds();
+ persist();
+ updateFlourRowsInPlace();
+ results();
 }
 
 function flourRows() {
  const host = $('flourRows');
+ const groups = currentFlourGroups();
+ const hydration = $('prefermentBox');
+ hydration.remove();
  host.replaceChildren();
- const straight = state.process === 'straight';
- const totals = document.createElement('div');
- const phases = document.createElement('div');
- phases.className = 'flour-phases';
- const seedGroup = document.createElement('section');
- seedGroup.className = 'flour-phase flour-phase-seed';
- const seedHeading = document.createElement('h3');
- seedHeading.textContent = '発酵種';
- seedGroup.append(seedHeading);
- const mainGroup = document.createElement('section');
- mainGroup.className = 'flour-phase flour-phase-main';
- const mainHeading = document.createElement('h3');
- mainHeading.textContent = '本捏ね';
- mainGroup.append(mainHeading);
- if (!straight) {
-  phases.append(seedGroup, mainGroup);
-  host.append(phases);
- }
- host.append(totals);
- syncFlourRows = state.flours.map((flour, index) => {
-  const row = document.createElement('div');
-  row.className = 'formula-flour';
-  const title = '粉 ' + (index + 1);
-  const header = document.createElement('div');
-  header.className = 'formula-flour-header';
-  const heading = document.createElement('strong');
-  heading.lang = 'it';
-  heading.textContent = 'Farina ' + (index + 1);
-  header.append(heading);
-  if (state.flours.length > 1) {
-   const remove = listAction('trash', '削除');
-   remove.classList.add('flour-remove');
-   remove.setAttribute('aria-label', title + 'を削除');
-   remove.onclick = () => {
-    state.flours.splice(index, 1);
-    const sum = state.flours.reduce((total, item) => total + item.pct, 0);
-    state.flours.forEach(item => item.pct = sum ? item.pct / sum * 100 : 100 / state.flours.length);
-    prepareSeeds(); persist(); redraw();
-   };
-   header.append(remove);
-  }
-  row.append(header);
-  const quantity = document.createElement('div');
-  quantity.className = 'formula-control formula-flour-quantity';
-  const label = document.createElement('span');
-  label.className = 'formula-control-label';
-  const automatic = index === state.flours.length - 1;
-  label.textContent = automatic ? '粉の合計（自動）' : '粉の合計';
-  quantity.append(label);
-
-  const remaining = () => {
-   const current = calc();
-   const other = current.flours.slice(0,-1).reduce((total, item, i) => total + (i === index ? 0 : item.grams), 0);
-   return Math.max(0, current.totalFlour - other);
+ syncFlourRows = [];
+ for (const phase of state.process === 'straight' ? ['main'] : ['seed','main']) {
+  const isSeed = phase === 'seed';
+  const label = isSeed ? '発酵種' : '本捏ね';
+  const section = document.createElement('section');
+  section.className = 'flour-phase flour-phase-' + phase;
+  const title = document.createElement('h3');
+  title.textContent = label;
+  section.append(title);
+  const effective = () => {
+   if (!state.flourGroups) return currentFlourGroups()[phase];
+   return independentPhaseWeights(Math.round(flourTotal()))[phase];
   };
-  let syncWeight;
-  if (automatic) {
-   const output = document.createElement('output');
-   output.className = 'formula-auto-weight';
-   output.setAttribute('aria-label', title + 'の自動計算粉量');
-   quantity.append(output);
-   syncWeight = grams => { output.textContent = fmt(grams) + 'g'; };
-  } else {
-   const weight = numberStepper({
-    label:title + 'の粉量', unit:'g', step:1, integer:true, max:remaining,
-    readValue:() => calc().flours[index].grams,
-    writeValue(value) {
-     const current = calc();
-     const weights = current.flours.map(item => item.grams);
-     weights[weights.length - 1] = remaining() - value;
-     weights[index] = value;
-     state.flours.forEach((item, i) => item.pct = current.totalFlour ? weights[i] / current.totalFlour * 100 : (i === weights.length - 1 ? 100 : 0));
-     prepareSeeds(); persist(); updateFlourRowsInPlace(); results();
-    },
-   });
-   quantity.append(weight.control);
-   syncWeight = weight.sync;
-  }
-  row.append(quantity);
-  const mainName = straight
-   ? flourNameField(flour, 'name', '使う粉の名前', '粉の名前')
-   : flourNameField(flour, 'name', heading.textContent, '粉の名前', title + 'の本捏ねの粉の名前');
-  let seed;
-  let mainAmount;
-  if (!straight) {
-   seed = numberStepper({
-    label:title + 'の発酵種に使う粉量', unit:'g', step:1, integer:true,
-    max:() => calc().flours[index].grams,
-    readValue:() => flour.seed,
-    writeValue(value) {
-     flour.seed = value;
-     prepareSeeds(); persist(); updateFlourRowsInPlace(); results();
-    },
-   });
-   const seedRow = document.createElement('div');
-   seedRow.className = 'flour-phase-row';
-   const seedName = flourNameField(flour, 'seedName', heading.textContent, '本捏ねと同じ', title + 'の発酵種の粉の名前');
-   seedRow.append(seedName, seed.control);
-   seedGroup.append(seedRow);
-
-   const mainRow = document.createElement('div');
-   mainRow.className = 'flour-phase-row';
-   const automaticWeight = document.createElement('div');
-   automaticWeight.className = 'flour-phase-weight';
-   const hint = document.createElement('span');
-   hint.textContent = '自動';
-   hint.setAttribute('aria-hidden', 'true');
-   mainAmount = document.createElement('output');
-   mainAmount.setAttribute('aria-label', title + 'の本捏ねの粉量（自動）');
-   automaticWeight.append(hint, mainAmount);
-   mainRow.append(mainName, automaticWeight);
-   mainGroup.append(mainRow);
-  } else {
-   row.append(mainName);
-  }
-  totals.append(row);
-  return () => {
-   const {grams} = calc().flours[index];
-   syncWeight(grams);
-   if (seed) {
-    seed.sync();
-    mainAmount.textContent = fmt(grams - flour.seed) + 'g';
+  groups[phase].forEach((entry,index) => {
+   const row = document.createElement('div');
+   row.className = 'flour-phase-row';
+   const heading = document.createElement('div');
+   heading.className = 'flour-phase-row-heading';
+   const name = document.createElement('strong');
+   name.lang = 'it';
+   name.textContent = 'Farina ' + (index + 1);
+   heading.append(name);
+   if (index > 0) {
+    const remove = listAction('trash', label + 'の粉' + (index + 1) + 'を削除', true);
+    remove.onclick = () => {
+     editableFlourGroups()[phase].splice(index,1);
+     prepareSeeds(); persist(); flourRows(); results();
+     host.querySelector('#addFlour-' + phase).focus();
+    };
+    heading.append(remove);
    }
+   const input = document.createElement('input');
+   input.setAttribute('list','flourNameOptions');
+   input.setAttribute('aria-label', label + 'の粉' + (index + 1) + 'の名前');
+   input.placeholder = '粉の名前';
+   input.value = entry.name;
+   input.oninput = () => {
+    editableFlourGroups()[phase][index].name = input.value;
+    persist();
+    results();
+   };
+   row.append(heading,input);
+   const weightLabel = label + 'の粉' + (index + 1) + 'の重量';
+   if (!isSeed && index === groups[phase].length - 1) {
+    const weight = document.createElement('div');
+    weight.className = 'flour-phase-weight';
+    const hint = document.createElement('span');
+    hint.textContent = '自動';
+    const value = document.createElement('output');
+    value.setAttribute('aria-label',weightLabel + '（自動）');
+    weight.append(hint,value);
+    row.append(weight);
+    syncFlourRows.push(() => { value.textContent = fmt(effective()[index].grams) + 'g'; });
+   } else {
+    const stepper = numberStepper({
+     label:weightLabel,unit:'g',step:1,integer:true,
+     max() {
+      const total = calc().totalFlour;
+      const current = effective();
+      const phaseTotal = isSeed ? total : total - calc().seedFlour;
+      return Math.max(0,phaseTotal - current.reduce((sum, item, i) =>
+       sum + (i !== index && (isSeed || i < current.length - 1) ? item.grams : 0),0));
+     },
+     readValue:() => effective()[index].grams,
+     writeValue(value) {
+      editableFlourGroups()[phase][index].grams = value;
+      commitFlourChange();
+     },
+    });
+    row.append(stepper.control);
+    syncFlourRows.push(stepper.sync);
+   }
+   section.append(row);
+  });
+  const add = listAction('plus','粉を追加');
+  add.id = 'addFlour-' + phase;
+  add.setAttribute('aria-label',label + 'の粉を追加');
+  add.onclick = () => {
+   const rows = editableFlourGroups()[phase];
+   if (!isSeed) rows.at(-1).grams = effective().at(-1).grams;
+   rows.push({name:'',grams:0});
+   prepareSeeds(); persist(); flourRows(); results();
+   host.querySelector('.flour-phase-' + phase + ' .flour-phase-row:last-of-type input')?.focus();
   };
- });
+  section.append(add);
+  if (isSeed) section.append(hydration);
+  host.append(section);
+ }
+ if (state.process === 'straight') host.append(hydration);
  updateFlourRowsInPlace();
- $('addFlour').hidden = state.flours.length >= 4;
 }
 
 function results() {
@@ -424,7 +429,7 @@ function results() {
  $('yeastPercent').textContent = current.valid ? '総粉量に対して ' + (Number(state.yeast) / current.totalFlour * 100).toFixed(3) + '%' : '';
 }
 
-function applyPreset(k){const p=adopted[k]||presets[k];state.style=k;for(const key of ['hydration','salt','oil'])state[key]=p[key];state.extras=clone([p.extras?.[0]||{name:'',pct:0},p.extras?.[1]||{name:'',pct:0}]);if(p.flours)state.flours=clone(p.flours);if(p.process)state.process=p.process;if(p.bigaHyd!==undefined)state.bigaHyd=p.bigaHyd;normalise();prepareSeeds();persist();redraw()}
+function applyPreset(k){const p=adopted[k]||presets[k];state.style=k;for(const key of ['hydration','salt','oil'])state[key]=p[key];state.extras=clone([p.extras?.[0]||{name:'',pct:0},p.extras?.[1]||{name:'',pct:0}]);if(p.flours){state.flours=clone(p.flours);delete state.flourGroups;if(p.flourGroups)state.flourGroups=clone(p.flourGroups)}if(p.process)state.process=p.process;if(p.bigaHyd!==undefined)state.bigaHyd=p.bigaHyd;normalise();prepareSeeds();persist();redraw()}
 function savedRecipes(){const curr=read('ange-v3-recipes',[]),prev=[];return [...(Array.isArray(curr)?curr.map((r,i)=>({...r,_key:'ange-v3-recipes',_i:i})):[]),...(Array.isArray(prev)?prev.map((r,i)=>({...r,_key:'ange-recipes',_i:i,legacy:true})):[])]}
 let recipeVisible=5;let editingRecipe=null;
 function currentRecipeData(){const {stage,fermentMethod,room,fridge,beforeCold,...recipe}=state;return clone(recipe)}
@@ -460,7 +465,7 @@ function showRecipes() {
  const query = $('recipeSearch').value.trim().toLocaleLowerCase();
  const matches = savedRecipes().filter(recipe => {
   const data = recipe.state || {};
-  const flours = (data.flours || []).flatMap(flour => [flour.name, flour.seedName]).join(' ');
+  const flours = recipeFlourNames(data).join(' ');
   const process = processLabels[data.process];
   return [recipe.name, flours, process, data.hydration, recipe.savedAt]
    .join(' ').toLocaleLowerCase().includes(query);
@@ -584,8 +589,9 @@ const NOTES_KEY = 'ange-v3-notes';
 const TEMP_KEY = 'ange-v3-temp-defaults';
 const NOTE_DRAFT_KEY = 'ange-v3-note-draft';
 const PLAN_KEY = 'ange-v3-preparation-plan';
-const noteInputIds = ['noteStarted','noteTemp','noteHumidity','noteMethod','noteSeedHours','noteMatureHours','noteRating','noteMemo'];
-const stageLabels = {starter:'発酵種の仕込み',kneaded:'捏ね上げ',chill:'冷蔵庫に入れる',unchill:'冷蔵庫から出す',divide:'分割・丸め',beforeBake:'焼く前',other:'その他'};
+const FLOUR_NAMES_KEY = 'ange-v3-flour-names';
+const noteInputIds = ['noteStarted','noteTemp','noteHumidity','noteMethod','noteSeedHours','noteMatureHours','noteRating','noteMemo','noteBakeCondition','noteImprovement'];
+const stageLabels = {mixStart:'捏ね始め',mainStart:'本捏ね開始',bake:'焼き始め',starter:'発酵種の仕込み',kneaded:'捏ね上げ',chill:'冷蔵庫に入れる',unchill:'冷蔵庫から出す',divide:'分割・丸め',beforeBake:'焼く前',other:'その他'};
 const nextStage = {starter:'kneaded',kneaded:'chill',chill:'unchill',unchill:'divide',divide:'beforeBake'};
 let editingNoteId = null;
 let noteRecipeFilter = null;
@@ -708,7 +714,7 @@ function showNotes() {
   }
   const x = note.inputs;
   const stageTerms = noteStages(note.stages).flatMap(entry => [stageLabels[entry.kind],entry.time,entry.observation]);
-  const searchable = [note.recipeName,x.noteStarted,x.noteMemo,x.noteMethod,x.noteTemp,x.noteHumidity,...stageTerms];
+  const searchable = [note.recipeName,x.noteStarted,x.noteMemo,x.noteMethod,x.noteTemp,x.noteHumidity,x.noteBakeCondition,x.noteImprovement,...stageTerms];
   if (!searchable.join(' ').toLocaleLowerCase().includes(query)) return false;
   const rating = Number(x.noteRating) || 0;
   return !ratingFilter || (ratingFilter === 'unrated' ? rating === 0 : rating >= Number(ratingFilter));
@@ -748,6 +754,12 @@ function showNotes() {
   ].filter(Boolean).join(' ／ ') + (x.noteMemo ? '\n' + x.noteMemo : '');
   more.append(heading);
   if (detail.textContent.trim()) more.append(detail);
+  for (const [label,value] of [['焼成条件',x.noteBakeCondition], ['次回の改善点',x.noteImprovement]]) {
+   if (!value) continue;
+   const info = document.createElement('p');
+   info.textContent = label + '：' + value;
+   more.append(info);
+  }
   const entries = noteStages(note.stages);
   if (entries.length) {
    const stages = document.createElement('ol');
@@ -926,7 +938,7 @@ function initNotes() {
  updateDurations();
 }
 const BACKUP_V1_KEYS = ['ange-v3-current', 'ange-v3-adopted', 'ange-v3-recipes', NOTES_KEY];
-const BACKUP_KEYS = [...BACKUP_V1_KEYS, TEMP_KEY, NOTE_DRAFT_KEY, PLAN_KEY];
+const BACKUP_KEYS = [...BACKUP_V1_KEYS, TEMP_KEY, NOTE_DRAFT_KEY, PLAN_KEY, FLOUR_NAMES_KEY];
 
 function restoreBackup(backup) {
  const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -1028,14 +1040,16 @@ $('noteHistoryTab').onclick = () => {
  resetNoteForm();
  switchNoteView('history');
 };
-$('noteNewTab').onclick = () => {
+function openNewNote(initialStage) {
  resetNoteForm();
  $('noteHistoryStatus').textContent = '';
  const hasDraft = restoreNoteDraft(noteRecipeFilter ? recipeKey(noteRecipeFilter) : undefined);
  $('noteRecipe').disabled = !!noteRecipeFilter;
- if (!hasDraft) appendNoteStage({kind:'kneaded',time:dateTimeLocal(new Date())});
+ if (!hasDraft && initialStage) appendNoteStage({kind:'kneaded',time:dateTimeLocal(new Date())});
  switchNoteView('new');
-};
+ return hasDraft;
+}
+$('noteNewTab').onclick = () => openNewNote(true);
 $('quickSaveRecipe').onclick = () => {
  if (editingRecipe) {
   selectTab('saved');
@@ -1049,7 +1063,7 @@ function changeFormulaProcess(process) {
  state.process = process;
  if (process === 'poolish' && state.bigaHyd < 80) state.bigaHyd = 100;
  if (process === 'biga' && state.bigaHyd > 80) state.bigaHyd = 50;
- if (process !== 'straight' && state.flours.every(flour => flour.seed === 0)) {
+ if (!state.flourGroups && process !== 'straight' && state.flours.every(flour => flour.seed === 0)) {
   state.flours[0].seed = Math.min(300,flourTotal());
  }
  normalise();
@@ -1059,7 +1073,6 @@ function changeFormulaProcess(process) {
 $('process').onchange = event => changeFormulaProcess(event.target.value);
 $('addBallSize').onclick = () => changeSecondBallSize(Number(state.ball) === 250 ? 180 : 250);
 $('removeBallSize').onclick = () => changeSecondBallSize(null);
-$('addFlour').onclick=()=>{if(state.flours.length>=4)return;const last=state.flours.at(-1);const newcomer=round(last.pct/2);last.pct=round(last.pct-newcomer);state.flours.push({id:Math.max(...state.flours.map(x=>x.id))+1,name:'',pct:newcomer,seed:0});prepareSeeds();persist();flourRows();results()};
 for(const button of document.querySelectorAll('[data-mode]'))button.onclick=()=>{if(state.mode==='target'&&button.dataset.mode==='flour'){const c=calc();state.totalFlour=Math.max(0,round(c.totalFlour))}state.mode=button.dataset.mode;prepareSeeds();persist();redraw()};
 $('yeastType').onchange=e=>{const next=e.target.value;if(next!==state.yeastType){const factor=next==='fresh'?3:1/3;state.yeast=round(state.yeast*factor);state.prefermentYeast=round(state.prefermentYeast*factor);state.yeastType=next;persist();redraw()}};
 const syncTotalYeast = appendNumberControl('yeastControl', 'イースト総量', {
@@ -1088,7 +1101,7 @@ const syncExtraRates = [0, 1].map(index => {
   writeValue(value) { state.extras[index].pct = value; updateExtras(); },
  });
 });
-$('adopt').onclick=()=>{adopted[state.style]={hydration:state.hydration,salt:state.salt,oil:state.oil,extras:clone(state.extras),flours:clone(state.flours),process:state.process,bigaHyd:state.bigaHyd};localStorage.setItem('ange-v3-adopted',JSON.stringify(adopted));$('adoptStatus').textContent='✓ '+presets[state.style].name+'の配合を保存しました'};
+$('adopt').onclick=()=>{adopted[state.style]={hydration:state.hydration,salt:state.salt,oil:state.oil,extras:clone(state.extras),flours:clone(state.flours),flourGroups:state.flourGroups ? clone(state.flourGroups) : undefined,process:state.process,bigaHyd:state.bigaHyd};localStorage.setItem('ange-v3-adopted',JSON.stringify(adopted));$('adoptStatus').textContent='✓ '+presets[state.style].name+'の配合を保存しました'};
 $('restorePreset').onclick=()=>{if(!confirm('このスタイルで採用した配合を初期値に戻しますか？'))return;delete adopted[state.style];localStorage.setItem('ange-v3-adopted',JSON.stringify(adopted));applyPreset(state.style);$('adoptStatus').textContent='初期配合に戻しました'};
 for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => {
  selectTab(button.dataset.tab);
@@ -1099,7 +1112,6 @@ $('cancelRecipeEdit').onclick = () => { stopRecipeEditing(); showRecipes(); };
 $('recipeEditFormula').onclick = () => selectTab('recipe');
 $('recipeSearch').oninput=()=>{recipeVisible=5;showRecipes()};$('recipeSort').onchange=()=>{recipeVisible=5;showRecipes()};$('moreRecipes').onclick=()=>{recipeVisible+=5;showRecipes()};
 $('noteSearch').oninput=()=>{noteVisible=5;showNotes()};$('noteRatingFilter').onchange=()=>{noteVisible=5;showNotes()};$('moreNotes').onclick=()=>{noteVisible+=5;showNotes()};
-$('reset').onclick=()=>{$('settingsMenu').open=false;if(confirm('現在の配合だけ初期化しますか？（保存レシピと採用済みプリセットは残ります）')){state=clone(defaults);normalise();persist();redraw()}};
 normalise();prepareSeeds();redraw();showRecipes();initNotes();initBackups();
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
@@ -1253,9 +1265,93 @@ function readRecipeConditions(id) {
  return Object.values(conditions).some(value => value !== null) ? conditions : null;
 }
 
+function recipeFlourNames(recipe) {
+ const groups = recipe.flourGroups;
+ return groups
+  ? [...groups.seed,...groups.main].map(row => row.name)
+  : (recipe.flours || []).flatMap(row => [row.name,row.seedName]);
+}
+
+function uniqueFlourNames(names) {
+ const result = new Map();
+ for (const name of names) {
+  const label = String(name ?? '').trim();
+  const key = label.normalize('NFKC').toLocaleLowerCase('ja-JP');
+  if (key && !result.has(key)) result.set(key,label);
+ }
+ return [...result.values()];
+}
+
+function flourCatalog() {
+ const saved = read(FLOUR_NAMES_KEY,null);
+ return Array.isArray(saved?.names) ? uniqueFlourNames(saved.names)
+  : uniqueFlourNames(savedRecipes().flatMap(recipe => recipeFlourNames(recipe.state || {})));
+}
+
+function updateFlourOptions() {
+ $('flourNameOptions').replaceChildren(...flourCatalog().map(name => new Option(name,name)));
+}
+
+function showFlourCatalog() {
+ const host = $('flourNamesList');
+ host.replaceChildren();
+ const names = flourCatalog();
+ if (!names.length) {
+  const empty = document.createElement('p');
+  empty.className = 'note';
+  empty.textContent = 'レシピを保存すると、入力した粉の名称がここに登録されます。';
+  host.append(empty);
+ }
+ names.forEach((name,index) => {
+  const form = document.createElement('form');
+  form.className = 'flour-name-edit';
+  const input = document.createElement('input');
+  input.value = name;
+  input.required = true;
+  input.setAttribute('aria-label',name + 'の名称');
+  const save = listAction('edit','変更',true);
+  save.type = 'submit';
+  const remove = listAction('trash',name + 'を候補から削除',true);
+  function write(next) {
+   try { localStorage.setItem(FLOUR_NAMES_KEY,JSON.stringify({names:next})); }
+   catch { $('flourNamesStatus').textContent = '変更を保存できませんでした。'; return; }
+   updateFlourOptions();
+   showFlourCatalog();
+   $('flourNamesStatus').textContent = '粉の名称リストを更新しました。';
+  }
+  form.onsubmit = event => {
+   event.preventDefault();
+   const replacement = input.value.trim();
+   const next = uniqueFlourNames(names.map((current,i) => i === index ? replacement : current));
+   if (!replacement || next.length !== names.length) {
+    $('flourNamesStatus').textContent = '別の名称を入力してください。';
+    return;
+   }
+   write(next);
+  };
+  remove.onclick = () => {
+   if (confirm('「' + name + '」を粉の名称候補から削除しますか？')) write(names.filter((_,i) => i !== index));
+  };
+  form.append(input,save,remove);
+  host.append(form);
+ });
+}
+
+$('openBackup').onclick = () => {
+ $('settingsMenu').open = false;
+ $('backupDialog').showModal();
+};
+$('openFlourNames').onclick = () => {
+ $('settingsMenu').open = false;
+ $('flourNamesStatus').textContent = '';
+ showFlourCatalog();
+ $('flourNamesDialog').showModal();
+};
+
 function openRecipeModal() {
  $('modalRecipeName').value = '';
- fillRecipeConditions('newRecipeConditions', temperatureDefaults());
+ const plan = read(PLAN_KEY,null);
+ fillRecipeConditions('newRecipeConditions', plan ? {room:plan.room,fridge:plan.method === 'mixed' ? plan.fridge : '',method:plan.method,coldHours:plan.method === 'mixed' ? plan.coldHours : ''} : temperatureDefaults());
  $('modalError').hidden = true;
  $('recipeModal').showModal();
  $('modalRecipeName').focus();
@@ -1274,11 +1370,21 @@ function saveRecipeRecord(name, conditions, source = null) {
    !confirm('同じ名前のレシピがあります。別のレシピとして保存しますか？')) return false;
   recipes.unshift({id:'recipe-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), ...record});
  }
+ const previousNames = localStorage.getItem(FLOUR_NAMES_KEY);
+ const names = uniqueFlourNames([...flourCatalog(),...recipeFlourNames(record.state)]);
+ let namesWritten = false;
  try {
+  localStorage.setItem(FLOUR_NAMES_KEY,JSON.stringify({names}));
+  namesWritten = true;
   localStorage.setItem(key, JSON.stringify(recipes));
  } catch {
+  if (namesWritten) {
+   if (previousNames === null) localStorage.removeItem(FLOUR_NAMES_KEY);
+   else localStorage.setItem(FLOUR_NAMES_KEY,previousNames);
+  }
   throw new Error('保存に失敗しました。空き容量とブラウザ設定を確認してください');
  }
+ updateFlourOptions();
  return true;
 }
 
@@ -1325,8 +1431,6 @@ function saveModalRecipe(skip) {
 $('modalCancel').onclick = () => $('recipeModal').close();
 $('recipeModalForm').onsubmit = event => { event.preventDefault(); saveModalRecipe(false); };
 $('modalSkip').onclick = () => saveModalRecipe(true);
-$('openTempSettings').onclick=()=>{$('settingsMenu').open=false;const d=temperatureDefaults();$('defaultRoom').value=d.room;$('defaultFridge').value=d.fridge;$('tempError').hidden=true;$('tempSettingsModal').showModal()};
-$('tempCancel').onclick=()=>$('tempSettingsModal').close();$('tempSave').onclick=()=>{const r=Number($('defaultRoom').value),f=Number($('defaultFridge').value);if(!$('defaultRoom').value||!$('defaultFridge').value||!Number.isFinite(r)||!Number.isFinite(f)||r< -10||r>50||f< -5||f>20){$('tempError').hidden=false;$('tempError').textContent='室温は-10〜50℃、冷蔵庫は-5〜20℃で設定してください';return}localStorage.setItem(TEMP_KEY,JSON.stringify({room:r,fridge:f}));$('tempSettingsModal').close();renderFermentReference()};
 let referenceMethod='room';
 function renderFermentReference() {
  const plan = read(PLAN_KEY,null);
@@ -1349,7 +1453,7 @@ function renderFermentReference() {
  const details = state.process === 'poolish' ? '<details><summary>参考データを見る</summary><div class="ref-table"><span>18〜20℃・種粉に対するドライ酵母</span><div>0.08% <b>12〜16時間</b></div><div>0.28% <b>約8時間</b></div><div>0.5% <b>約4時間</b></div><small>一般的な参考例。現在の配合の予測ではありません。</small></div></details>' : '<details><summary>参考情報を見る</summary><p class="note">温度・加水率・酵母量・生地の状態によって発酵時間は変わります。</p></details>';
  $('fermentReference').innerHTML = '<div class="ref-method">' + process + ' ／ ' + source + '</div>' +
   '<div class="ref-temps"><span>室温 <b>' + room + '℃</b></span>' + cold + '</div>' +
-  '<div class="ref-result"><small>現在の配合での参考時間</small><strong>算出対象外</strong><span>現在の条件に一致する検証データがありません。</span></div>' +
+  (plan?.bake ? '' : '<div class="ref-result"><small>現在の配合での参考時間</small><strong>算出対象外</strong><span>現在の条件に一致する検証データがありません。</span></div>') +
   details + (method === 'mixed' ? '<p class="ref-caution">冷蔵しても発酵はすぐには止まりません。</p>' : '');
 }
 
@@ -1415,16 +1519,16 @@ function updatePlanFields() {
 function preparationWindows(plan, process) {
  if (!plan) return null;
  const start = new Date(plan.start).getTime();
- const bake = new Date(plan.bake).getTime();
+ const bake = plan.bake ? new Date(plan.bake).getTime() : null;
  const main = process !== 'straight' && plan.main ? new Date(plan.main).getTime() : null;
- const total = (bake - start) / 3600000;
+ const total = bake === null ? null : (bake - start) / 3600000;
  const seed = main === null ? null : (main - start) / 3600000;
  const cold = plan.method === 'mixed' ? Number(plan.coldHours) : 0;
- if (!Number.isFinite(total) || total <= 0) return {error:'焼き始めを仕込み開始より後に設定してください。'};
- if (seed !== null && (!Number.isFinite(seed) || seed <= 0 || seed >= total)) {
+ if (!Number.isFinite(start) || (total !== null && (!Number.isFinite(total) || total <= 0))) return {error:'焼き始めを仕込み開始より後に設定してください。'};
+ if (seed !== null && (!Number.isFinite(seed) || seed <= 0 || (total !== null && seed >= total))) {
   return {error:'本捏ねは、種の仕込み開始と焼き始めの間に設定してください。'};
  }
- if (!Number.isFinite(cold) || cold < 0 || (plan.method === 'mixed' && (!cold || cold > total - (seed ?? 0)))) {
+ if (!Number.isFinite(cold) || cold < 0 || (plan.method === 'mixed' && (!cold || (total !== null && cold > total - (seed ?? 0))))) {
   return {error:'冷蔵時間を本捏ねから焼くまでの範囲で設定してください。'};
  }
  return {total, seed, cold};
@@ -1445,30 +1549,22 @@ function avpnYeastRange(plan, windows, formula, calculated) {
 
 function renderPlanReference(calculated) {
  const plan = read(PLAN_KEY, null);
- $('planReference').hidden = !plan;
- $('planFromFormula').hidden = !plan;
- if (!plan) return;
- const mismatch = plan.process && plan.process !== state.process;
- const windows = mismatch
-  ? {error:'配合の製法が変わりました。仕込み予定で製法を確認してください。'}
-  : preparationWindows(plan, state.process);
+ $('planReference').hidden = false;
+ $('planFromFormula').hidden = !!plan?.bake;
  $('planReferenceSource').hidden = true;
- if (windows.error) {
-  $('planFormulaWindow').textContent = '仕込み予定を見直す';
-  $('planTimeReference').textContent = windows.error;
-  $('planYeastReference').textContent = '';
+ $('planTimeReference').textContent = '';
+ $('planYeastReference').textContent = '';
+ if (plan?.process && plan.process !== state.process) {
+  $('planTimeReference').textContent = '仕込み予定で製法を確認してください。';
   return;
  }
- const duration = value => fermentationDurationLabel(Math.round(value * 60) / 60, true);
- $('planFormulaWindow').textContent = '仕込みから焼成まで ' + duration(windows.total);
- const parts = ['仕込みから焼成まで ' + duration(windows.total)];
- if (windows.seed !== null) {
-  parts.push('発酵種 約' + duration(windows.seed), '本捏ねから焼成まで 約' + duration(windows.total - windows.seed));
- } else if (state.process !== 'straight') {
-  parts.push('本捏ねの予定を入れると、発酵種と本捏ね後の時間を表示します。');
+ const windows = plan ? preparationWindows(plan,state.process) : null;
+ if (windows?.error) {
+  $('planTimeReference').textContent = windows.error;
+  return;
  }
- if (windows.cold) parts.push('冷蔵 ' + duration(windows.cold));
- $('planTimeReference').textContent = parts.join(' ／ ');
+ if (!plan?.bake) $('planTimeReference').textContent = '参考発酵時間：算出対象外';
+ if (!plan) return;
  const range = avpnYeastRange(plan, windows, state, calculated);
  const type = state.yeastType === 'fresh' ? '生' : 'ドライ';
  const grams = value => value > 0 && value < 0.01 ? '0.01未満' : Number(value.toFixed(2)).toString();
@@ -1476,6 +1572,80 @@ function renderPlanReference(calculated) {
   ? type + 'イーストの参考範囲 ' + range.map(grams).join('〜') + ' g（常温ストレート法）'
   : 'イーストの参考量はこの条件では未算出。現在の配合は ' + type + ' ' + fmt(Number(state.yeast)) + ' g。';
  $('planReferenceSource').hidden = !range;
+}
+
+function agendaSteps(plan) {
+ return [
+  plan.process === 'straight' ? ['mixStart',plan.start] : ['starter',plan.start],
+  ...(plan.process === 'straight' ? [] : [['mainStart',plan.main]]),
+  ['bake',plan.bake],
+ ];
+}
+
+function renderAgendaStages() {
+ const plan = read(PLAN_KEY,null);
+ $('agendaStages').hidden = !plan;
+ if (!plan) return;
+ const steps = agendaSteps(plan);
+ const actual = plan.actual ?? {};
+ const next = steps.find(([kind]) => !actual[kind])?.[0];
+ const list = $('agendaStageList');
+ list.replaceChildren();
+ for (const [kind,when] of steps) {
+  const row = document.createElement('div');
+  row.className = 'agenda-step';
+  const label = document.createElement('strong');
+  label.textContent = stageLabels[kind];
+  const values = document.createElement('small');
+  values.textContent = '予定 ' + (when ? when.replace('T',' ') : '未定');
+  if (kind === next) {
+   row.classList.add('next-agenda-step');
+   label.textContent += ' ・次の工程';
+  }
+  const field = document.createElement('label');
+  field.className = 'field';
+  field.textContent = '実施日時';
+  const time = document.createElement('input');
+  time.type = 'datetime-local';
+  time.value = actual[kind] ?? '';
+  const save = value => {
+   const latest = read(PLAN_KEY,null);
+   if (!latest || latest.start !== plan.start || latest.process !== plan.process) {
+    $('agendaStatus').textContent = '仕込み予定が変更されました。確認してから実施日時を記録してください。';
+    renderAgendaStages();
+    return;
+   }
+   const events = {...latest.actual};
+   if (value) events[kind] = value;
+   else delete events[kind];
+   try { localStorage.setItem(PLAN_KEY,JSON.stringify({...latest,actual:events})); }
+   catch { $('agendaStatus').textContent = '実施日時を保存できませんでした。'; return; }
+   renderAgendaStages();
+   $('agendaStatus').textContent = value ? '実施日時を記録しました。' : '実施日時を消去しました。';
+  };
+  time.onchange = () => save(time.value);
+  const now = listAction('clock','今を記録');
+  now.onclick = () => save(dateTimeLocal(new Date()));
+  field.append(time);
+  row.append(label,values,field,now);
+  list.append(row);
+ }
+ $('recordAgendaInDiario').disabled = !steps.some(([kind]) => actual[kind]);
+}
+
+function recordAgendaInDiario() {
+ const plan = read(PLAN_KEY,null);
+ if (!plan) return;
+ showRecipeNoteHistory(null);
+ const hasDraft = openNewNote(false);
+ const existing = noteStageValues();
+ const start = plan.actual?.[plan.process === 'straight' ? 'mixStart' : 'starter'];
+ if (start && !hasDraft) $('noteStarted').value = start;
+ for (const [kind] of agendaSteps(plan)) {
+  const time = plan.actual?.[kind];
+  if (time && !existing.some(stage => stage.kind === kind && stage.time === time)) appendNoteStage({kind,time});
+ }
+ saveNoteDraft();
 }
 
 function initPreparationPlan() {
@@ -1491,7 +1661,9 @@ function initPreparationPlan() {
  for (const [key,id] of Object.entries(planFields)) $(id).value = plan[key] ?? '';
  $('planForm').addEventListener('input', () => { $('planStatus').textContent = ''; });
  $('planMethod').onchange = updatePlanFields;
- $('planFromFormula').onclick = () => { selectTab('plan'); $('planStart').focus(); };
+ $('recordAgendaInDiario').onclick = recordAgendaInDiario;
+ renderAgendaStages();
+ $('planFromFormula').onclick = () => { $('ratioSection').open = true; };
  $('planForm').onsubmit = event => {
   event.preventDefault();
   const values = Object.fromEntries(Object.entries(planFields).map(([key,id]) => [key,$(id).value]));
@@ -1502,18 +1674,22 @@ function initPreparationPlan() {
    $('planStatus').textContent = windows.error;
    return;
   }
+  const previous = read(PLAN_KEY,null);
+  if (previous?.start === values.start && previous.process === values.process) values.actual = previous.actual;
   try { localStorage.setItem(PLAN_KEY, JSON.stringify(values)); }
   catch { $('planStatus').textContent = '仕込み予定を保存できませんでした。'; return; }
+  renderAgendaStages();
   if (state.process !== planProcess) changeFormulaProcess(planProcess);
   else {
    renderFermentReference();
    renderPlanReference(calc());
   }
   selectTab('recipe');
-  $('planFromFormula').focus();
+  document.querySelector('[data-tab="recipe"]').focus();
  };
  renderPlanReference(calc());
 }
 
+updateFlourOptions();
 initPreparationPlan();
 selectTab("plan");
