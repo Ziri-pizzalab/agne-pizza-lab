@@ -546,3 +546,7 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
 .agenda-step { border-top: 1px solid var(--line); padding: 8px; }
 .agenda-step small { display: block; color: var(--muted); font-size: 13px; }
 .next-agenda-step { background: var(--pink); border-radius: 9px; color: var(--rose); }
+
+.drive-check-result { white-space: pre-line; overflow-wrap: anywhere; }
+#driveCheckDialog button:disabled { opacity: .5; }
+#closeDriveCheck { margin-top: 8px; }
