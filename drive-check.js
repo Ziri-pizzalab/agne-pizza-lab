@@ -34,13 +34,14 @@
    throw error;
   }
 
-  function fileList(tag) {
+  function fileList(tag, pageToken = '') {
    const params = new URLSearchParams({
     q:"trashed = false and appProperties has { key='angeType' and value='" + tag + "' }",
     orderBy:'createdTime desc',
-    fields:'files(id,name,mimeType,createdTime)',
-    pageSize:'20',
+    fields:'nextPageToken,incompleteSearch,files(id,name,mimeType,createdTime,appProperties)',
+    pageSize:'100',
    });
+   if (pageToken) params.set('pageToken', pageToken);
    return request(api + '/files?' + params);
   }
 
@@ -50,8 +51,8 @@
    return ids[0];
   }
 
-  async function findOrCreateFolder(sample) {
-   const {files} = await fileList(folderTag);
+  async function findOrCreateFolder(sample, tag = folderTag, name = 'Ange Pizza Lab - 接続テスト') {
+   const {files} = await fileList(tag);
    const folder = files.find(file => file.mimeType === folderMime);
    if (folder) return folder.id;
    sample.newFolderId ??= await newFileId();
@@ -60,12 +61,12 @@
     await request(api + '/files?fields=id', {
      method:'POST',
      headers:{'Content-Type':'application/json'},
-     body:JSON.stringify({id,name:'Ange Pizza Lab - 接続テスト',mimeType:folderMime,appProperties:{angeType:folderTag}}),
+     body:JSON.stringify({id,name,mimeType:folderMime,appProperties:{angeType:tag}}),
     });
    } catch (error) {
     if (error.status !== 409) throw error;
     const existing = await request(api + '/files/' + encodeURIComponent(id) + '?fields=mimeType,appProperties,trashed');
-    if (existing.trashed || existing.mimeType !== folderMime || existing.appProperties?.angeType !== folderTag) throw error;
+    if (existing.trashed || existing.mimeType !== folderMime || existing.appProperties?.angeType !== tag) throw error;
    }
    return id;
   }
@@ -82,18 +83,15 @@
    return {id,data};
   }
 
-  async function writeSample(sample, folderId) {
+  function readJson(id) {
+   return request(api + '/files/' + encodeURIComponent(id) + '?alt=media');
+  }
+
+  async function uploadJson(metadata, data) {
    const boundary = 'ange-' + crypto.randomUUID();
-   const metadata = {
-    id:sample.id,
-    name:'Driveテスト-' + sample.data.createdAt.replaceAll(':','-') + '.json',
-    mimeType:'application/json',
-    parents:[folderId],
-    appProperties:{angeType:sampleTag},
-   };
    const body = [
     '--' + boundary, 'Content-Type: application/json; charset=UTF-8', '', JSON.stringify(metadata),
-    '--' + boundary, 'Content-Type: application/json', '', JSON.stringify(sample.data),
+    '--' + boundary, 'Content-Type: application/json', '', JSON.stringify(data),
     '--' + boundary + '--','',
    ].join('\r\n');
    try {
@@ -106,6 +104,16 @@
     // Retrying the same generated ID can return 409 after a successful first upload.
     if (error.status !== 409) throw error;
    }
+  }
+
+  async function writeSample(sample, folderId) {
+   await uploadJson({
+    id:sample.id,
+    name:'Driveテスト-' + sample.data.createdAt.replaceAll(':','-') + '.json',
+    mimeType:'application/json',
+    parents:[folderId],
+    appProperties:{angeType:sampleTag},
+   },sample.data);
    const result = await readSample(sample.id);
    if (result.data.createdAt !== sample.data.createdAt || result.data.message !== sample.data.message) {
     throw new Error('読み戻したテストデータが送信内容と一致しません。');
@@ -117,7 +125,12 @@
    const {files} = await fileList(sampleTag);
    return files.length ? readSample(files[0].id) : null;
   }
-  return {findOrCreateFolder,createSample,writeSample,readLatestSample};
+  async function userId() {
+   const {user} = await request(api + '/about?fields=user(permissionId)');
+   if (!user?.permissionId) throw new Error('接続先のGoogleアカウントを確認できませんでした。');
+   return user.permissionId;
+  }
+  return {userId,findOrCreateFolder,createSample,writeSample,readLatestSample,fileList,newFileId,readJson,uploadJson};
  }
 
  const dialog = field('driveCheckDialog');
@@ -129,6 +142,7 @@
  let pending;
  const input = field('driveClientId');
  const status = field('driveCheckStatus');
+ try { input.value = localStorage.getItem('ange-drive-client-id') ?? ''; } catch {}
  const output = field('driveCheckResult');
 
  function updateButtons() {
@@ -167,6 +181,7 @@
   connectionAttempt++;
   output.textContent = '';
   status.textContent = 'Google Driveに接続していません。';
+  document.dispatchEvent(new Event('ange-drive-session'));
   updateButtons();
  }
 
@@ -198,6 +213,8 @@
     accessToken = response.access_token;
     expiresAt = Date.now() + Math.max(0,Number(response.expires_in) - 15) * 1000;
     if (!reconnecting) pending = undefined;
+    try { localStorage.setItem('ange-drive-client-id', client_id); } catch {}
+    document.dispatchEvent(new Event('ange-drive-session'));
    }
    busy = false;
    status.textContent = message;
@@ -256,7 +273,7 @@
     write ? 'テストデータをDriveに保存し、同じ内容を読み戻せました。' : 'Driveからテストデータを読み込みました。';
   } catch (error) {
    if (attempt !== connectionAttempt) return;
-   if (error.status === 401) expiresAt = 0;
+   expireIfUnauthorized(error);
    status.textContent = error.message;
   } finally {
    if (attempt === connectionAttempt) {
@@ -266,11 +283,36 @@
   }
  }
 
- field('openDriveCheck').onclick = () => {
+ function openConnection() {
   field('settingsMenu').open = false;
   dialog.showModal();
   updateButtons();
   loadGoogleSdk().catch(error => { if (dialog.open && !accessToken) status.textContent = error.message; });
+ }
+ function expireIfUnauthorized(error) {
+  if (error.status !== 401) return;
+  expiresAt = 0;
+  status.textContent = error.message;
+  updateButtons();
+  document.dispatchEvent(new Event('ange-drive-session'));
+ }
+ window.angeDriveConnection = {
+  open:openConnection,
+  expireIfUnauthorized,
+  connected:() => !!accessToken && Date.now() < expiresAt,
+  api() {
+   if (!this.connected()) throw new Error('Google Driveに接続してから再試行してください。');
+   return createApi(accessToken);
+  },
+ };
+ field('openDriveCheck').onclick = openConnection;
+ field('driveConnectionShortcut').onclick = openConnection;
+ field('modalDriveConnect').onclick = openConnection;
+ field('editDriveConnect').onclick = openConnection;
+ field('driveDiagnosticToggle').onclick = () => {
+  const diagnostic = field('driveDiagnostic');
+  diagnostic.hidden = !diagnostic.hidden;
+  field('driveDiagnosticToggle').setAttribute('aria-expanded', String(!diagnostic.hidden));
  };
  field('driveConnect').onclick = connect;
  field('driveDisconnect').onclick = disconnect;

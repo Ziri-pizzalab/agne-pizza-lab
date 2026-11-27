@@ -430,7 +430,15 @@ function results() {
 }
 
 function applyPreset(k){const p=adopted[k]||presets[k];state.style=k;for(const key of ['hydration','salt','oil'])state[key]=p[key];state.extras=clone([p.extras?.[0]||{name:'',pct:0},p.extras?.[1]||{name:'',pct:0}]);if(p.flours){state.flours=clone(p.flours);delete state.flourGroups;if(p.flourGroups)state.flourGroups=clone(p.flourGroups)}if(p.process)state.process=p.process;if(p.bigaHyd!==undefined)state.bigaHyd=p.bigaHyd;normalise();prepareSeeds();persist();redraw()}
-function savedRecipes(){const curr=read('ange-v3-recipes',[]),prev=[];return [...(Array.isArray(curr)?curr.map((r,i)=>({...r,_key:'ange-v3-recipes',_i:i})):[]),...(Array.isArray(prev)?prev.map((r,i)=>({...r,_key:'ange-recipes',_i:i,legacy:true})):[])]}
+function localRecipes() {
+ const recipes = read('ange-v3-recipes', []);
+ return Array.isArray(recipes) ? recipes.map((recipe,index) => ({...recipe,_key:'ange-v3-recipes',_i:index})) : [];
+}
+const driveRecipes = window.angeDriveRecipes;
+function savedRecipes() { return driveRecipes.enabled ? driveRecipes.list() : localRecipes(); }
+function sameRecipeRevision(first, second) {
+ return recipeKey(first) === recipeKey(second) && first._driveRevision === second._driveRevision;
+}
 let recipeVisible=5;let editingRecipe=null;
 function currentRecipeData(){const {stage,fermentMethod,room,fridge,beforeCold,...recipe}=state;return clone(recipe)}
 function loadRecipeState(r){const s=r.state||{};if(r.legacy){state={...clone(defaults),...Object.fromEntries(['mode','bigaFlour','bigaHyd','extraFlour','hydration','salt','oil','ball','quantity'].filter(k=>s[k]!==undefined).map(k=>[k,s[k]]))};state.totalFlour=Number(state.bigaFlour)+Number(state.extraFlour);state.yeast=round(state.totalFlour*Number(s.yeast??.15)/100);state.prefermentYeast=state.yeast}else{state={...clone(defaults),...clone(s)};state.totalFlour=Number(s.totalFlour??(Number(s.bigaFlour??300)+Number(s.extraFlour??360)))}normalise();prepareSeeds();persist();redraw()}
@@ -476,7 +484,7 @@ function showRecipes() {
   const item = document.createElement('details');
   item.className = 'saved-item';
   item.setAttribute('name', 'saved-recipes');
-  item.classList.toggle('edit-active', editingRecipe !== null && recipeKey(editingRecipe) === recipeKey(recipe));
+  item.classList.toggle('edit-active', editingRecipe !== null && sameRecipeRevision(editingRecipe, recipe));
   const heading = document.createElement('summary');
   const info = document.createElement('span');
   const name = document.createElement('strong');
@@ -486,6 +494,7 @@ function showRecipes() {
    processLabels[recipe.state?.process],
    recipe.state?.hydration !== undefined ? '加水 ' + recipe.state.hydration + '%' : '',
    recipe.savedAt,
+   recipe._driveConflict ? '別端末の変更と競合' : '',
   ].filter(Boolean).join(' · ');
   info.append(name, summary);
   heading.append(info);
@@ -518,14 +527,25 @@ function showRecipes() {
    $('recipeName').focus();
   };
   const remove = listAction('trash', 'レシピを削除', true);
-  remove.onclick = () => {
-   if (!confirm('このレシピを削除しますか？（過去のピザノートには影響しません）')) return;
+  remove.onclick = async () => {
+   if (recipeOperationPending) return;
+   const message = recipe._driveConflict ? '競合しているこの版を削除しますか？' : 'このレシピを削除しますか？（過去のピザノートには影響しません）';
+   if (!confirm(message)) return;
+   if (driveRecipes.enabled) {
+    await runRecipeOperation($('recipeEditStatus'), async () => {
+     await driveRecipes.save(null, recipe, true);
+     if (editingRecipe && sameRecipeRevision(editingRecipe, recipe)) stopRecipeEditing();
+     renderRecipeBook();
+     $('recipeEditStatus').textContent = 'Driveのレシピ帳から削除しました。';
+    });
+    return;
+   }
    const list = read(recipe._key, []);
    const index = recipe.id ? list.findIndex(entry => entry.id === recipe.id) : recipe._i;
    if (index < 0 || index >= list.length) return;
    list.splice(index, 1);
    localStorage.setItem(recipe._key, JSON.stringify(list));
-   if (editingRecipe && recipeKey(editingRecipe) === recipeKey(recipe)) stopRecipeEditing();
+   if (editingRecipe && sameRecipeRevision(editingRecipe, recipe)) stopRecipeEditing();
    showRecipes();
    refreshNoteRecipes();
   };
@@ -538,9 +558,10 @@ function showRecipes() {
  if (!matches.length) {
   const empty = document.createElement('p');
   empty.className = 'note';
-  empty.textContent = query ? '一致するレシピはありません。' : 'まだ保存されたレシピはありません。';
+  empty.textContent = driveRecipes.enabled && !driveRecipes.ready ? 'Driveに接続するとレシピを表示できます。' :
+   query ? '一致するレシピはありません。' : 'まだ保存されたレシピはありません。';
   root.append(empty);
-  if (!query) {
+  if (!query && (!driveRecipes.enabled || driveRecipes.ready)) {
    const goToFormula = listAction('scale', '配合へ');
    goToFormula.onclick = () => selectTab('recipe');
    root.append(goToFormula);
@@ -627,7 +648,7 @@ function pickedRecipe() {
 }
 
 function linkedNoteRecipe(note, recipes) {
- if (note.recipeId !== undefined) return recipes.find(recipe => recipeKey(recipe) === note.recipeId);
+ if (note.recipeId !== undefined) return recipes.find(recipe => (recipeKey(recipe) === note.recipeId || recipe.legacyRecipeKey === note.recipeId));
  const matches = recipes.filter(recipe => recipe.name === note.recipeName &&
   JSON.stringify(recipe.state) === JSON.stringify(note.recipeSnapshot));
  return matches.length === 1 ? matches[0] : undefined;
@@ -989,7 +1010,7 @@ function initBackups() {
    link.download = 'Ange_Pizza_Lab_backup_' + new Date().toISOString().slice(0, 10) + '.json';
    link.click();
    setTimeout(() => URL.revokeObjectURL(url), 1000);
-   $('backupStatus').textContent = 'バックアップを作成しました。iCloud Driveなどに保存してください';
+   $('backupStatus').textContent = 'この端末のバックアップを作成しました。';
   } catch {
    $('backupStatus').textContent = 'バックアップを作成できませんでした。保存データとブラウザ設定を確認してください';
   }
@@ -1025,6 +1046,7 @@ function selectTab(tab) {
  if (tab === 'saved') {
   $('recipeListView').hidden = false;
   $('ferment').hidden = true;
+  if (tabChanged && driveRecipes.enabled && window.angeDriveConnection.connected()) refreshDriveBook();
  }
  if (tab === 'plan') updatePlanFields();
  $('settingsMenu').open = false;
@@ -1354,13 +1376,25 @@ function openRecipeModal() {
  fillRecipeConditions('newRecipeConditions', plan ? {room:plan.room,fridge:plan.method === 'mixed' ? plan.fridge : '',method:plan.method,coldHours:plan.method === 'mixed' ? plan.coldHours : ''} : temperatureDefaults());
  $('modalError').hidden = true;
  $('recipeModal').showModal();
+ updateDriveBookControls();
  $('modalRecipeName').focus();
 }
 
-function saveRecipeRecord(name, conditions, source = null) {
+async function saveRecipeRecord(name, conditions, source = null) {
  const key = source?._key || 'ange-v3-recipes';
- const recipes = read(key, []);
  const record = {name, state:currentRecipeData(), conditions, savedAt:new Date().toLocaleDateString('ja-JP')};
+ if (driveRecipes.enabled) {
+  if (source && !source._driveRevision) throw new Error('Driveのレシピ帳からレシピを開き直してください。');
+  if (!source && savedRecipes().some(recipe => recipe.name === name) &&
+   !confirm('同じ名前のレシピがあります。別のレシピとして保存しますか？')) return false;
+  await driveRecipes.save({...record, ...(source?.legacyRecipeKey ? {legacyRecipeKey:source.legacyRecipeKey} : {})}, source);
+  try {
+   localStorage.setItem(FLOUR_NAMES_KEY,JSON.stringify({names:uniqueFlourNames([...flourCatalog(),...recipeFlourNames(record.state)])}));
+  } catch {}
+  updateFlourOptions();
+  return true;
+ }
+ const recipes = read(key, []);
  if (source) {
   const index = source.id ? recipes.findIndex(recipe => recipe.id === source.id) : source._i;
   if (index < 0 || index >= recipes.length) throw new Error('元のレシピが見つかりません');
@@ -1399,34 +1433,108 @@ function finishRecipeSave(message) {
 function saveRecipeEdit(overwrite) {
  if (!editingRecipe) return;
  const name = $('recipeName').value.trim();
- try {
+ runRecipeOperation($('recipeEditStatus'), async () => {
   if (!name) throw new Error('レシピ名を入力してください');
   if (!overwrite && name === editingRecipe.name) {
    throw new Error('別名で保存するには、元と異なるレシピ名を入力してください');
   }
   const conditions = readRecipeConditions('editRecipeConditions');
-  if (saveRecipeRecord(name, conditions, overwrite ? editingRecipe : null)) {
-   finishRecipeSave(overwrite ? '✓ レシピを更新しました' : '✓ 別名で保存しました');
+  if (await saveRecipeRecord(name, conditions, overwrite ? editingRecipe : null)) {
+   finishRecipeSave(driveRecipes.enabled ? '✓ Google Driveに保存しました' : overwrite ? '✓ レシピを更新しました' : '✓ 別名で保存しました');
   }
- } catch (error) {
-  $('recipeEditStatus').textContent = error.message;
- }
+ });
 }
 
 function saveModalRecipe(skip) {
- try {
+ runRecipeOperation($('modalError'), async () => {
   const name = $('modalRecipeName').value.trim();
   if (!name) throw new Error('レシピ名を入力してください');
   const conditions = skip ? null : readRecipeConditions('newRecipeConditions');
-  if (saveRecipeRecord(name, conditions)) {
+  if (await saveRecipeRecord(name, conditions)) {
    $('recipeModal').close();
-   finishRecipeSave('✓ レシピを追加しました');
+   finishRecipeSave(driveRecipes.enabled ? '✓ Google Driveに保存しました' : '✓ レシピを追加しました');
   }
- } catch (error) {
-  $('modalError').hidden = false;
-  $('modalError').textContent = error.message;
+ });
+}
+
+let recipeOperationPending = false;
+const recipeOperationButtons = ['overwriteRecipe','saveRecipe','cancelRecipeEdit','modalCancel','modalSave','modalSkip',
+ 'enableDriveRecipes','importLocalRecipes','reloadDriveRecipes','editDriveConnect','modalDriveConnect'];
+
+function updateDriveBookControls() {
+ const connected = window.angeDriveConnection.connected();
+ const localCount = localRecipes().length;
+ $('driveRecipesControls').hidden = !driveRecipes.enabled;
+ $('driveBackupNotice').hidden = !driveRecipes.enabled;
+ $('modalDriveConnect').hidden = $('editDriveConnect').hidden = !driveRecipes.enabled || connected;
+ $('enableDriveRecipes').hidden = driveRecipes.enabled;
+ $('importLocalRecipes').hidden = localCount === 0;
+ $('driveLocalInfo').textContent = localCount
+  ? 'この端末に保存されたレシピ ' + localCount + '件をDriveに取り込めます。端末内の元データは残ります。'
+  : 'Driveを保存先にすると、同じGoogleアカウントでレシピを開けます。';
+ $('driveRecipesStatus').textContent = !connected ? '保存先 Google Drive ・ 未接続'
+  : driveRecipes.ready ? '保存先 Google Drive' : '保存先 Google Drive ・ 一覧を更新してください';
+}
+
+function renderRecipeBook() {
+ updateDriveBookControls();
+ showRecipes();
+ refreshNoteRecipes();
+ updateFlourOptions();
+}
+
+async function runRecipeOperation(status, task) {
+ if (recipeOperationPending) return;
+ recipeOperationPending = true;
+ status.hidden = false;
+ status.textContent = driveRecipes.enabled || status.id.startsWith('drive') ? 'Google Driveを確認しています…' : '';
+ for (const id of recipeOperationButtons) $(id).disabled = true;
+ try { await task(); }
+ catch (error) {
+  window.angeDriveConnection.expireIfUnauthorized(error);
+  status.textContent = error.message;
+  if (activeTab === 'saved') showRecipes();
+ } finally {
+  for (const id of recipeOperationButtons) $(id).disabled = false;
+  recipeOperationPending = false;
+  updateDriveBookControls();
  }
 }
+
+function refreshDriveBook() {
+ return runRecipeOperation($('recipeEditStatus'), async () => {
+  await driveRecipes.load();
+  renderRecipeBook();
+  $('recipeEditStatus').textContent = '';
+ });
+}
+
+$('reloadDriveRecipes').onclick = refreshDriveBook;
+$('enableDriveRecipes').onclick = () => runRecipeOperation($('driveRecipeOperation'), async () => {
+ await driveRecipes.load();
+ driveRecipes.activate();
+ stopRecipeEditing();
+ renderRecipeBook();
+ $('driveRecipeOperation').textContent = 'Driveのレシピ帳を有効にしました。';
+});
+$('importLocalRecipes').onclick = () => {
+ const records = localRecipes();
+ if (!confirm('この端末にある ' + records.length + '件のレシピを、接続中のGoogle Driveに取り込みますか？')) return;
+ runRecipeOperation($('driveRecipeOperation'), async () => {
+  const imported = await driveRecipes.migrate(records);
+  const wasEnabled = driveRecipes.enabled;
+  driveRecipes.activate();
+  if (!wasEnabled) stopRecipeEditing();
+  renderRecipeBook();
+  $('driveRecipeOperation').textContent = imported ? 'Driveへの取り込みが完了しました（新規 ' + imported + '件）。'
+   : 'この端末のレシピはすでにDriveに取り込まれています。';
+ });
+};
+document.addEventListener('ange-drive-session', () => {
+ renderRecipeBook();
+ if (driveRecipes.enabled && window.angeDriveConnection.connected()) refreshDriveBook();
+});
+$('recipeModal').addEventListener('cancel', event => { if (recipeOperationPending) event.preventDefault(); });
 
 $('modalCancel').onclick = () => $('recipeModal').close();
 $('recipeModalForm').onsubmit = event => { event.preventDefault(); saveModalRecipe(false); };
@@ -1691,5 +1799,6 @@ function initPreparationPlan() {
 }
 
 updateFlourOptions();
+updateDriveBookControls();
 initPreparationPlan();
 selectTab("plan");

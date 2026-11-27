@@ -550,3 +550,12 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
 .drive-check-result { white-space: pre-line; overflow-wrap: anywhere; }
 #driveCheckDialog button:disabled { opacity: .5; }
 #closeDriveCheck { margin-top: 8px; }
+
+.drive-recipes-controls {
+ border-bottom: 1px solid var(--line);
+ margin-bottom: .85rem;
+ padding-bottom: .85rem;
+}
+.drive-recipes-controls h3 { margin: .6rem 0 .35rem; }
+#driveDiagnostic { margin: .7rem 0; }
+#driveCheckDialog > button { margin-top: .4rem; }

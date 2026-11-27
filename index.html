@@ -1,4 +1,4 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#faf6f0"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Ange Pizza Lab"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-192.png"><link rel="stylesheet" href="style.css?v=3029"><title>Ange Pizza Lab</title></head><body>
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#faf6f0"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Ange Pizza Lab"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-192.png"><link rel="stylesheet" href="style.css?v=3030"><title>Ange Pizza Lab</title></head><body>
 <header class="app-header" id="pageTop">
   <div class="header-inner">
     <div class="brand"><img src="icon-180.png" alt="" class="brand-icon"><h1>Ange Pizza Lab</h1></div>
@@ -7,7 +7,7 @@
       <div class="settings-actions">
         <button id="openFlourNames" type="button" class="quiet">粉の名称管理</button>
         <button id="openBackup" type="button" class="quiet">バックアップ・復元</button>
-        <button id="openDriveCheck" type="button" class="quiet">Google Drive 接続テスト</button>
+        <button id="openDriveCheck" type="button" class="quiet">Google Drive</button>
         <span class="note app-version">Ver.3.0</span>
       </div>
     </details>
@@ -121,13 +121,20 @@
 </section>
 
 <section id="bake" class="panel"><div class="card"><h2>焼成ガイド</h2><div id="bakeGuide" class="hero"></div><p class="note">高温窯での参考値です。お使いの窯が最高400℃の場合、ナポリ風は90秒〜2分半ほどから試し、焼床・底面・焼き色を見て調整してください。窯の表示温度と焼床温度は異なることがあります。</p></div></section>
-<section id="saved" class="panel" aria-label="レシピ帳"><div class="card" id="recipeListView"><div id="recipeEditor" hidden>
+<section id="saved" class="panel" aria-label="レシピ帳"><div class="card" id="recipeListView"><div id="driveRecipesControls" class="drive-recipes-controls" hidden>
+  <p id="driveRecipesStatus" class="note" role="status"></p>
+  <div class="actions">
+    <button id="driveConnectionShortcut" type="button" class="quiet">Driveの設定</button>
+    <button id="reloadDriveRecipes" type="button" class="quiet">一覧を更新</button>
+  </div>
+</div><div id="recipeEditor" hidden>
   <button id="recipeEditFormula" type="button" class="quiet icon-action"><span class="ui-icon ui-icon-scale" aria-hidden="true"></span>配合を調整</button>
   <div class="field"><label for="recipeName">保存するレシピ名</label><input id="recipeName" placeholder="レシピ名"></div>
   <details class="recipe-conditions" id="editRecipeOptions"><summary><span class="ui-icon ui-icon-drop" aria-hidden="true"></span>発酵条件・メモ</summary><div id="editRecipeConditions"></div></details>
   <div class="actions">
     <button id="overwriteRecipe" class="primary" type="button">上書き保存</button>
     <button id="saveRecipe" class="quiet" type="button">別名で保存</button>
+    <button id="editDriveConnect" type="button" class="quiet" hidden>Driveの設定</button>
     <button id="cancelRecipeEdit" class="quiet" type="button">編集をやめる</button>
   </div>
 </div><div id="recipeEditStatus" class="note" role="status"></div><div class="list-tools recipe-list-tools"><input id="recipeSearch" type="search" placeholder="レシピを検索" aria-label="レシピを検索"><select id="recipeSort" aria-label="レシピの並び順"><option value="new">新しい順</option><option value="name">名前順</option></select><button id="allNoteHistory" type="button" class="quiet" aria-label="すべての仕込み履歴">全履歴</button></div><div id="recipeList"></div><button id="moreRecipes" class="quiet list-more" hidden>さらに5件表示</button></div>
@@ -206,29 +213,42 @@
   <form method="dialog"><button class="quiet">閉じる</button></form>
 </dialog>
 <dialog id="driveCheckDialog" class="recipe-modal" aria-labelledby="driveCheckTitle">
-  <h2 id="driveCheckTitle">Google Drive 接続テスト</h2>
-  <p class="note">接続確認用のサンプルを専用フォルダに保存します。レシピや写真は送信されません。</p>
+  <h2 id="driveCheckTitle">Google Drive</h2>
   <label class="field">Google OAuth クライアントID<input id="driveClientId" type="text" inputmode="url" spellcheck="false" autocomplete="off" autocapitalize="none"></label>
   <div class="actions">
     <button id="driveConnect" type="button" class="primary">Google Driveに接続</button>
     <button id="driveDisconnect" type="button" class="quiet" hidden>接続を終了</button>
   </div>
   <p id="driveCheckStatus" class="note" role="status">Google Driveに接続していません。</p>
+  <section class="drive-recipes-controls" aria-labelledby="driveRecipeSetup">
+    <h3 id="driveRecipeSetup">レシピ帳の保存先</h3>
+    <p id="driveLocalInfo" class="note"></p>
+    <div class="actions">
+      <button id="enableDriveRecipes" type="button" class="primary">Driveのレシピ帳を使う</button>
+      <button id="importLocalRecipes" type="button" class="quiet">この端末のレシピを取り込む</button>
+    </div>
+    <p id="driveRecipeOperation" class="note" role="status"></p>
+  </section>
+  <button id="driveDiagnosticToggle" type="button" class="quiet" aria-controls="driveDiagnostic" aria-expanded="false">接続テスト</button>
+  <div id="driveDiagnostic" hidden>
+  <p class="note">テスト用のサンプルを専用フォルダに保存します。</p>
   <div class="actions">
     <button id="driveWriteSample" type="button" class="quiet" disabled>テスト保存</button>
     <button id="driveReadSample" type="button" class="quiet" disabled>Driveから読み込む</button>
   </div>
   <p id="driveCheckResult" class="note drive-check-result"></p>
+  </div>
   <button id="closeDriveCheck" type="button" class="quiet">閉じる</button>
 </dialog>
 <dialog id="backupDialog" class="recipe-modal" aria-labelledby="backupTitle">
   <h2 id="backupTitle">バックアップ・復元</h2>
+  <p class="note" id="driveBackupNotice" hidden>この画面は端末内データ用です。Google Driveのレシピは含まれません。</p>
   <button id="exportBackup" type="button" class="quiet">バックアップを書き出す</button>
   <label class="restore-label">バックアップから復元<input id="importBackup" type="file" accept="application/json,.json"></label>
   <p id="backupStatus" class="note" role="status"></p>
   <form method="dialog"><button class="quiet">閉じる</button></form>
 </dialog>
-<dialog id="recipeModal" class="recipe-modal"><form method="dialog" id="recipeModalForm" novalidate><h2>レシピを保存</h2><div class="field"><label for="modalRecipeName">レシピ名</label><input id="modalRecipeName" placeholder="例：いつものビガ生地" required></div><div id="newRecipeConditions"></div><p id="modalError" class="warning" role="status" hidden></p><div class="actions"><button id="modalCancel" type="button" class="quiet">キャンセル</button><button id="modalSkip" type="button" class="quiet">条件をスキップして保存</button><button id="modalSave" type="submit" class="primary">保存する</button></div></form></dialog><aside id="stickySummary" class="sticky-summary" aria-label="配合結果">
+<dialog id="recipeModal" class="recipe-modal"><form method="dialog" id="recipeModalForm" novalidate><h2>レシピを保存</h2><div class="field"><label for="modalRecipeName">レシピ名</label><input id="modalRecipeName" placeholder="例：いつものビガ生地" required></div><div id="newRecipeConditions"></div><p id="modalError" class="warning" role="status" hidden></p><div class="actions"><button id="modalDriveConnect" type="button" class="quiet" hidden>Driveの設定</button><button id="modalCancel" type="button" class="quiet">キャンセル</button><button id="modalSkip" type="button" class="quiet">条件をスキップして保存</button><button id="modalSave" type="submit" class="primary">保存する</button></div></form></dialog><aside id="stickySummary" class="sticky-summary" aria-label="配合結果">
 <div class="summary-bar">
   <div class="summary-total"><span>総生地量</span><strong id="summaryWeight">—</strong></div>
   <button type="button" id="summaryToggle" class="dock-action quiet" aria-expanded="false" aria-controls="summaryDetails"><span class="ui-icon ui-icon-table" aria-hidden="true"></span><span>材料</span></button>
@@ -237,4 +257,4 @@
 <p id="summaryIngredients" class="summary-message" role="status" hidden></p>
 <div id="summaryDetails" hidden><table class="summary-table" aria-label="材料内訳（g）">
 <thead><tr><th scope="col">材料（g）</th><th id="summarySeedHeading" class="summary-phase-seed" scope="col">発酵種</th><th class="summary-phase-main" scope="col">本捏ね</th><th scope="col">合計</th></tr></thead>
-<tbody id="summaryMaterialRows"></tbody></table><div class="summary-balls" id="summaryBalls"></div><div class="summary-detail-title">発酵の参考時間</div><div id="referenceMethodSwitch" class="method-switch" role="group" aria-label="発酵方法"><button type="button" class="ferment-choice" data-ferment="room">常温</button><button type="button" class="ferment-choice" data-ferment="mixed">常温＋冷蔵庫</button></div><div id="fermentReference" class="note" aria-live="polite"></div></div></aside><footer class="app-footer"><a href="#pageTop">先頭へ</a></footer><script defer src="app.js?v=3028"></script><script defer src="drive-check.js?v=3029"></script></body></html>
+<tbody id="summaryMaterialRows"></tbody></table><div class="summary-balls" id="summaryBalls"></div><div class="summary-detail-title">発酵の参考時間</div><div id="referenceMethodSwitch" class="method-switch" role="group" aria-label="発酵方法"><button type="button" class="ferment-choice" data-ferment="room">常温</button><button type="button" class="ferment-choice" data-ferment="mixed">常温＋冷蔵庫</button></div><div id="fermentReference" class="note" aria-live="polite"></div></div></aside><footer class="app-footer"><a href="#pageTop">先頭へ</a></footer><script defer src="drive-check.js?v=3030"></script><script defer src="drive-recipes.js?v=3030"></script><script defer src="app.js?v=3030"></script></body></html>
