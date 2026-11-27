@@ -961,7 +961,7 @@ function initNotes() {
 const BACKUP_V1_KEYS = ['ange-v3-current', 'ange-v3-adopted', 'ange-v3-recipes', NOTES_KEY];
 const BACKUP_KEYS = [...BACKUP_V1_KEYS, TEMP_KEY, NOTE_DRAFT_KEY, PLAN_KEY, FLOUR_NAMES_KEY];
 
-function restoreBackup(backup) {
+function validatedBackupEntries(backup) {
  const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
  const keys = backup?.formatVersion === 1 ? BACKUP_V1_KEYS : BACKUP_KEYS;
  if (backup?.app !== 'Ange Pizza Lab' || ![1, 2].includes(backup.formatVersion) || !isRecord(backup.items)) {
@@ -976,6 +976,11 @@ function restoreBackup(backup) {
     : isRecord(value);
   if (!keys.includes(key) || !valid) throw new Error('バックアップの保存データの形式を確認してください');
  }
+ return entries;
+}
+
+function restoreBackup(backup) {
+ const entries = validatedBackupEntries(backup);
  if (!confirm('ファイルに含まれる保存データを置き換えます。続けますか？')) return;
 
  const previous = new Map(entries.map(([key]) => [key, localStorage.getItem(key)]));
@@ -1459,7 +1464,7 @@ function saveModalRecipe(skip) {
 
 let recipeOperationPending = false;
 const recipeOperationButtons = ['overwriteRecipe','saveRecipe','cancelRecipeEdit','modalCancel','modalSave','modalSkip',
- 'enableDriveRecipes','importLocalRecipes','reloadDriveRecipes','editDriveConnect','modalDriveConnect'];
+ 'enableDriveRecipes','importLocalRecipes','selectDriveBackup','driveBackupFiles','retryDriveBackup','reloadDriveRecipes','editDriveConnect','modalDriveConnect'];
 
 function updateDriveBookControls() {
  const connected = window.angeDriveConnection.connected();
@@ -1517,20 +1522,75 @@ $('enableDriveRecipes').onclick = () => runRecipeOperation($('driveRecipeOperati
  renderRecipeBook();
  $('driveRecipeOperation').textContent = 'Driveのレシピ帳を有効にしました。';
 });
+async function importRecipesToDrive(records) {
+ const imported = await driveRecipes.migrate(records);
+ const wasEnabled = driveRecipes.enabled;
+ driveRecipes.activate();
+ if (!wasEnabled) stopRecipeEditing();
+ renderRecipeBook();
+ $('driveRecipeOperation').textContent = imported ? 'Driveにレシピを取り込みました（新規 ' + imported + '件）。'
+  : '対象のレシピはすでにDriveに取り込まれています。';
+}
+
+function recipeRecordsFromBackups(backups) {
+ return backups.flatMap(backup => {
+  const recipes = validatedBackupEntries(backup).find(([key]) => key === 'ange-v3-recipes')?.[1] ?? [];
+  if (!recipes.length) throw new Error('レシピが入ったAnge Pizza Labのバックアップを選んでください。');
+  return recipes.map((recipe,index) => ({...recipe,_key:'ange-v3-recipes',_i:index}));
+ });
+}
+
 $('importLocalRecipes').onclick = () => {
  const records = localRecipes();
  if (!confirm('この端末にある ' + records.length + '件のレシピを、接続中のGoogle Driveに取り込みますか？')) return;
- runRecipeOperation($('driveRecipeOperation'), async () => {
-  const imported = await driveRecipes.migrate(records);
-  const wasEnabled = driveRecipes.enabled;
-  driveRecipes.activate();
-  if (!wasEnabled) stopRecipeEditing();
-  renderRecipeBook();
-  $('driveRecipeOperation').textContent = imported ? 'Driveへの取り込みが完了しました（新規 ' + imported + '件）。'
-   : 'この端末のレシピはすでにDriveに取り込まれています。';
- });
+ runRecipeOperation($('driveRecipeOperation'), () => importRecipesToDrive(records));
 };
+
+let backupImportRecords;
+function importSelectedBackups() {
+ runRecipeOperation($('driveRecipeOperation'), async () => {
+  if (!backupImportRecords) return;
+  await importRecipesToDrive(backupImportRecords);
+  backupImportRecords = undefined;
+  $('retryDriveBackup').hidden = true;
+ });
+}
+
+$('selectDriveBackup').onclick = () => {
+ if (!window.angeDriveConnection.connected()) {
+  $('driveRecipeOperation').textContent = '先に「Google Driveに接続」を押してください。';
+  return;
+ }
+ $('driveBackupFiles').click();
+};
+$('driveBackupFiles').onchange = async event => {
+ const input = event.target;
+ const files = [...input.files];
+ input.value = '';
+ if (!files.length) return;
+ backupImportRecords = undefined;
+ $('retryDriveBackup').hidden = true;
+ let records;
+ try {
+  const backups = await Promise.all(files.map(async file => JSON.parse(await file.text())));
+  records = recipeRecordsFromBackups(backups);
+ } catch (error) {
+  $('driveRecipeOperation').textContent = error instanceof SyntaxError
+   ? 'Ange Pizza Labのバックアップファイルを選んでください。' : error.message;
+  return;
+ }
+ const device = localRecipes();
+ const count = 'バックアップのレシピ ' + records.length + '件';
+ const withDevice = device.length ? 'と、この端末のレシピ ' + device.length + '件' : '';
+ if (!confirm(count + withDevice + 'を、接続中のGoogle Driveにまとめますか？')) return;
+ backupImportRecords = [...records,...device];
+ $('retryDriveBackup').hidden = false;
+ importSelectedBackups();
+};
+$('retryDriveBackup').onclick = importSelectedBackups;
 document.addEventListener('ange-drive-session', () => {
+ backupImportRecords = undefined;
+ $('retryDriveBackup').hidden = true;
  renderRecipeBook();
  if (driveRecipes.enabled && window.angeDriveConnection.connected()) refreshDriveBook();
 });

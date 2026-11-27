@@ -160,14 +160,16 @@
  }
 
  async function migrate(records) {
+  const prepared = records.map(source => ({id:source.id, record:publicRecord(source)}));
+  if (prepared.some(({record}) => !validRecord(record))) {
+   throw new Error('取り込み元に読み取れないレシピがあります。元のデータをご確認ください。');
+  }
   const context = await apiForUser();
   await refresh(context);
   let count = 0;
-  for (const source of records) {
-   const record = publicRecord(source);
-   if (!validRecord(record)) throw new Error('端末内に読み取れないレシピがあります。元のレシピはこの端末に残っています。');
+  for (const {id,record} of prepared) {
    const fingerprint = await hashRecord(record);
-   const key = typeof source.id === 'string' && /^[a-z0-9_-]{1,90}$/i.test(source.id) ? source.id : 'legacy-' + fingerprint;
+   const key = typeof id === 'string' && /^[a-z0-9_-]{1,90}$/i.test(id) ? id : 'legacy-' + fingerprint;
    const revision = 'import-' + fingerprint;
    if ([...events.values()].some(event => event.key === key && event.revision === revision)) continue;
    const payload = {format:kind,key,parent:null,removed:false,record};
