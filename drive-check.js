@@ -106,15 +106,15 @@
    }
   }
 
-  function readPhoto(id) {
+  function readMedia(id) {
    return request(api + '/files/' + encodeURIComponent(id) + '?alt=media', {}, response => response.blob());
   }
 
-  async function uploadPhoto(metadata, photo) {
+  async function uploadMedia(metadata, media) {
    const boundary = 'ange-' + crypto.randomUUID();
    const headers = ['--' + boundary, 'Content-Type: application/json; charset=UTF-8', '',
-    JSON.stringify(metadata), '--' + boundary, 'Content-Type: image/jpeg', '', ''].join('\r\n');
-   const body = new Blob([headers, photo, '\r\n--' + boundary + '--\r\n']);
+    JSON.stringify(metadata), '--' + boundary, 'Content-Type: ' + metadata.mimeType, '', ''].join('\r\n');
+   const body = new Blob([headers, media, '\r\n--' + boundary + '--\r\n']);
    try {
     await request(upload + '/files?uploadType=multipart&fields=id', {
      method:'POST', headers:{'Content-Type':'multipart/related; boundary=' + boundary}, body,
@@ -148,7 +148,7 @@
    if (!user?.permissionId) throw new Error('接続先のGoogleアカウントを確認できませんでした。');
    return user.permissionId;
   }
-  return {userId,findOrCreateFolder,createSample,writeSample,readLatestSample,fileList,newFileId,readJson,uploadJson,readPhoto,uploadPhoto};
+  return {userId,findOrCreateFolder,createSample,writeSample,readLatestSample,fileList,newFileId,readJson,uploadJson,readMedia,uploadMedia,readPhoto:readMedia,uploadPhoto:uploadMedia};
  }
 
  const dialog = field('driveCheckDialog');

@@ -320,6 +320,24 @@ function createNotePhotoEditor(prefix, agenda) {
   changed();
  }
 
+ async function readPhoto(ref, api = connection.api()) {
+  if (!reference(ref)) throw new Error('写真の保存情報を確認できませんでした。');
+  const blob = await api.readPhoto(ref.id);
+  if (blob.type !== 'image/jpeg' || await digest(blob) !== ref.sha256) throw new Error('Driveの写真が保存記録と一致しません。');
+  return blob;
+ }
+
+ async function pdfPhotos(photos, expectedOwner) {
+  const refs = Object.entries(readRefs(photos));
+  if (!refs.length) return {};
+  const session = sessionVersion;
+  const api = connection.api();
+  if (expectedOwner && await api.userId() !== expectedOwner) throw new Error('仕込み記録と同じGoogleアカウントで接続してください。');
+  const images = await Promise.all(refs.map(async ([key,ref])=>[key,await readPhoto(ref,api)]));
+  if (session !== sessionVersion) throw new Error('接続が変わりました。もう一度お試しください。');
+  return Object.fromEntries(images);
+ }
+
  function history(photos) {
   const refs = readRefs(photos);
   if (!Object.keys(refs).length) return null;
@@ -349,8 +367,7 @@ function createNotePhotoEditor(prefix, agenda) {
     list.append(figure);
     if (!available) return;
     try {
-     const blob = await connection.api().readPhoto(refs[key].id);
-     if (blob.type !== 'image/jpeg' || await digest(blob) !== refs[key].sha256) throw new Error('写真が一致しません。');
+     const blob = await readPhoto(refs[key]);
      if (!group.isConnected || current !== requestVersion || session !== sessionVersion) return;
      const url = URL.createObjectURL(blob);
      urls.push(url);
@@ -374,7 +391,7 @@ function createNotePhotoEditor(prefix, agenda) {
   render();
  });
  return {setEnabled,reset,save,history,clearHistory,loadAgenda,snapshot,accept,
-  readyForHandoff,hasPhotos,finishAgenda};
+  readyForHandoff,hasPhotos,finishAgenda,pdfPhotos};
 }
 
 window.angeNotePhotos = createNotePhotoEditor('note',false);

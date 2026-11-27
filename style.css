@@ -690,3 +690,23 @@ button.agenda-camera {
  object-fit: contain;
  border-radius: .35rem;
 }
+
+button.pdf-action {
+ width: 100%;
+ justify-content: center;
+ margin-block: .65rem;
+ background: var(--pink);
+ color: var(--rose);
+}
+.pdf-output { margin-block: .5rem; }
+.pdf-output .pdf-download {
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ padding: .55rem .75rem;
+ min-height: 44px;
+ background: var(--pink);
+ color: var(--rose);
+ border-radius: .55rem;
+ font-weight: 700;
+}

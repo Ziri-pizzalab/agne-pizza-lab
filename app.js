@@ -441,7 +441,8 @@ function sameRecipeRevision(first, second) {
 }
 let recipeVisible=5;let editingRecipe=null;
 function currentRecipeData(){const {stage,fermentMethod,room,fridge,beforeCold,...recipe}=state;return clone(recipe)}
-function loadRecipeState(r){const s=r.state||{};if(r.legacy){state={...clone(defaults),...Object.fromEntries(['mode','bigaFlour','bigaHyd','extraFlour','hydration','salt','oil','ball','quantity'].filter(k=>s[k]!==undefined).map(k=>[k,s[k]]))};state.totalFlour=Number(state.bigaFlour)+Number(state.extraFlour);state.yeast=round(state.totalFlour*Number(s.yeast??.15)/100);state.prefermentYeast=state.yeast}else{state={...clone(defaults),...clone(s)};state.totalFlour=Number(s.totalFlour??(Number(s.bigaFlour??300)+Number(s.extraFlour??360)))}normalise();prepareSeeds();persist();redraw()}
+function applyRecipeSnapshot(r){const s=r.state||{};if(r.legacy){state={...clone(defaults),...Object.fromEntries(['mode','bigaFlour','bigaHyd','extraFlour','hydration','salt','oil','ball','quantity'].filter(k=>s[k]!==undefined).map(k=>[k,s[k]]))};state.totalFlour=Number(state.bigaFlour)+Number(state.extraFlour);state.yeast=round(state.totalFlour*Number(s.yeast??.15)/100);state.prefermentYeast=state.yeast}else{state={...clone(defaults),...clone(s)};state.totalFlour=Number(s.totalFlour??(Number(s.bigaFlour??300)+Number(s.extraFlour??360)))}normalise();prepareSeeds()}
+function loadRecipeState(recipe) { applyRecipeSnapshot(recipe); persist(); redraw(); }
 function recipeKey(r){return r.id||r._key+'::'+r._i}
 const fermentationMethods = {room:'常温', cold:'冷蔵', mixed:'常温＋冷蔵庫'};
 
@@ -550,7 +551,7 @@ function showRecipes() {
    refreshNoteRecipes();
   };
   actions.append(load, history, edit, remove);
-  item.append(actions);
+  item.append(actions,pdfButton(() => pdfRecipePayload(recipe)));
   if (recipe.conditions) item.append(recipeConditionDetails(recipe.conditions));
   root.append(item);
  }
@@ -675,7 +676,7 @@ function refreshNoteRecipes() {
 
 function pickedRecipe() {
  const recipe = savedRecipes().find(entry => recipeKey(entry) === $('noteRecipe').value);
- if (recipe) return {id:recipeKey(recipe), name:recipe.name, snapshot:clone(recipe.state || {})};
+ if (recipe) return {id:recipeKey(recipe), name:recipe.name, snapshot:clone(recipe.state || {}), conditions:recipe.conditions, plan:recipe.productionPlan};
  const flours = flourAmounts(calc()).map(([name]) => name).filter(Boolean).join('＋');
  return {id:null, name:[flours, fmt(state.hydration) + '%', processLabels[state.process] + '法'].filter(Boolean).join('・'), snapshot:clone(state)};
 }
@@ -840,6 +841,7 @@ function showNotes() {
    }
    more.append(stages);
   }
+  more.append(pdfButton(() => pdfNotePayload(note),true));
   const photos = notePhotos.history(note.photos);
   if (photos) more.append(photos);
   const actions = document.createElement('div');
@@ -973,8 +975,11 @@ function saveNoteEntry() {
    : chosen.id,
   recipeName:existing?.recipeName || chosen.name,
   recipeSnapshot:existing?.recipeSnapshot || chosen.snapshot,
+  recipeConditions:existing ? existing.recipeConditions : chosen.conditions,
+  recipePlan:existing ? existing.recipePlan : productionPlan(chosen.snapshot.process) ?? chosen.plan,
   inputs:input, stages, savedAt:noteWriteTime ??= new Date().toISOString(),
  };
+ for (const key of ['recipeConditions','recipePlan']) if (item[key] === undefined) delete item[key];
  runRecipeOperation(status, async () => {
   if (driveRecipes.enabled) {
    if (existing && !existing._driveRevision) throw new Error('仕込み履歴から端末内の記録をDriveに取り込んでください。');
@@ -1233,16 +1238,8 @@ function flourAmounts(calculated) {
  return Array.from(byName, ([name, {seed, main}]) => [name, seed, main, seed + main]);
 }
 
-function updateStickySummary(c) {
- $('summaryWeight').textContent = c.valid ? fmt(c.dough) + 'g' : '—';
- $('summaryIngredients').hidden = c.valid;
- $('summaryIngredients').textContent = c.valid ? '' : '配合を確認してください';
- const straight = state.process === 'straight';
- const table = $('summaryMaterialRows');
- table.replaceChildren();
- $('summarySeedHeading').hidden = straight;
- if (c.valid) {
-  const rows = [
+function materialRows(c) {
+ const rows = [
    ['粉 合計', c.seedFlour, c.totalFlour - c.seedFlour, c.totalFlour],
    ...flourAmounts(c).map(([name, seed, main, total]) => [name || '名称未設定', seed || null, main || null, total, true]),
    ['水', c.seedWater, c.water - c.seedWater, c.water],
@@ -1254,6 +1251,89 @@ function updateStickySummary(c) {
    rows.push(['オイル', null, oil, oil]);
   }
   for (const extra of c.extras) rows.push([extra.name, null, extra.grams, extra.grams]);
+ return rows;
+}
+
+function productionPlan(process) {
+ const plan = read(PLAN_KEY,null);
+ if (!plan?.start || plan.process !== process) return null;
+ const {actual,...planned} = plan;
+ return planned;
+}
+
+function pdfButton(payload,history = false) {
+ const button = listAction('note','PDF出力');
+ button.classList.add('pdf-action');
+ button.onclick = () => window.angePdf.open(payload,history);
+ return button;
+}
+
+function pdfRecipePayload(recipe) {
+ const previous = state;
+ try {
+  applyRecipeSnapshot(recipe);
+  const result = calc();
+  if (!result.valid) throw new Error('保存された配合を確認してください。');
+  const straight = state.process === 'straight';
+  const balls = hasSecondBallSize()
+   ? fmt(Number(state.ball)) + 'g × ' + state.quantity + '玉 ＋ ' + fmt(state.secondBall) + 'g × ' + state.secondQuantity + '玉'
+   : fmt(Number(state.ball)) + 'g × ' + result.balls + '玉';
+  const remaining = hasSecondBallSize() ? Math.max(0,result.dough-targetDoughWeight()) : result.leftover;
+  const conditions = recipe.conditions ?? {};
+  const plan = recipe.productionPlan;
+  const planned = plan ? agendaSteps(plan).map(([kind, when])=>[stageLabels[kind],pdfDate(when)]) : [];
+  const temperatures = [
+   conditions.method ? fermentationMethods[conditions.method] : plan?.method ? fermentationMethods[plan.method] : '',
+   (conditions.room ?? plan?.room) != null && (conditions.room ?? plan?.room) !== '' ? '室温 ' + (conditions.room ?? plan.room) + '℃' : '',
+   (conditions.fridge ?? plan?.fridge) != null && (conditions.fridge ?? plan?.fridge) !== '' ? '冷蔵庫 ' + (conditions.fridge ?? plan.fridge) + '℃' : '',
+   conditions.roomHours != null ? '常温 ' + fermentationDurationLabel(conditions.roomHours) : '',
+   (conditions.coldHours ?? plan?.coldHours) != null && (conditions.coldHours ?? plan?.coldHours) !== '' ? '冷蔵 ' + fermentationDurationLabel(conditions.coldHours ?? plan.coldHours,true) : '',
+  ].filter(Boolean).join('  ／  ');
+  return {
+   name:recipe.name, id:recipe.id, process:processLabels[state.process],
+   stats:[['製法',processLabels[state.process]],['総粉量',fmt(result.totalFlour) + 'g'],['最終加水率',fmt(Number(state.hydration)) + '%'],['分割',balls]],
+   headings:straight ? ['材料（g）','本捏ね','合計'] : ['材料（g）','発酵種','本捏ね','合計'],
+   materials:materialRows(result).map(([name,seed,main,total])=>[
+    name === 'イースト' && state.yeastType === 'fresh' ? '生イースト' : name === 'イースト' ? 'ドライイースト' : name,
+    ...(straight ? [main,total] : [seed,main,total]).map(value=>value === null ? '—' : fmt(value)),
+   ]),
+   formula:[straight ? '' : '発酵種加水率 ' + fmt(Number(state.bigaHyd)) + '%',
+    '塩分率 ' + fmt(Number(state.salt)) + '%','総重量 ' + fmt(result.dough) + 'g','余り ' + fmt(remaining) + 'g'].filter(Boolean).join('  ／  '),
+   temperatures, planned, memo:conditions.memo,
+  };
+ } finally {
+  state = previous;
+ }
+}
+
+function pdfDate(value) { return String(value || '').replace('T',' '); }
+
+function pdfNotePayload(note) {
+ if (!note.recipeSnapshot) throw new Error('この仕込み記録には当時の配合がありません。');
+ const data = pdfRecipePayload({id:note.id,name:note.recipeName,state:note.recipeSnapshot,
+  conditions:note.recipeConditions,productionPlan:note.recipePlan});
+ const inputs = note.inputs ?? {};
+ data.diary = {
+  stages:noteStages(note.stages).map(stage=>[stageLabels[stage.kind] ?? 'その他',pdfDate(stage.time),
+   stage.dough != null && stage.dough !== '' ? stage.dough + '℃' : '',
+   stage.ambient != null && stage.ambient !== '' ? stage.ambient + '℃' : '',stage.observation]),
+  started:pdfDate(inputs.noteStarted), room:inputs.noteTemp, humidity:inputs.noteHumidity,
+  method:fermentationMethods[inputs.noteMethod], rating:inputs.noteRating, baking:inputs.noteBakeCondition,
+  memo:inputs.noteMemo, improvement:inputs.noteImprovement, photos:note.photos, owner:note._driveOwner,
+ };
+ return data;
+}
+
+function updateStickySummary(c) {
+ $('summaryWeight').textContent = c.valid ? fmt(c.dough) + 'g' : '—';
+ $('summaryIngredients').hidden = c.valid;
+ $('summaryIngredients').textContent = c.valid ? '' : '配合を確認してください';
+ const straight = state.process === 'straight';
+ const table = $('summaryMaterialRows');
+ table.replaceChildren();
+ $('summarySeedHeading').hidden = straight;
+ if (c.valid) {
+  const rows = materialRows(c);
   for (const [name, seed, main, total, isFlourDetail] of rows) {
    const row = document.createElement('tr');
    if (isFlourDetail) row.className = 'summary-flour-detail';
@@ -1461,6 +1541,8 @@ function openRecipeModal() {
 async function saveRecipeRecord(name, conditions, source = null) {
  const key = source?._key || 'ange-v3-recipes';
  const record = {name, state:currentRecipeData(), conditions, savedAt:new Date().toLocaleDateString('ja-JP')};
+ const plan = source ? source.productionPlan : productionPlan(state.process);
+ if (plan) record.productionPlan = plan;
  if (driveRecipes.enabled) {
   if (source && !source._driveRevision) throw new Error('Driveのレシピ帳からレシピを開き直してください。');
   if (!source && savedRecipes().some(recipe => recipe.name === name) &&
