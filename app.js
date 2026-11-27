@@ -639,7 +639,6 @@ function updateNoteDriveControls() {
  $('noteDriveControls').hidden = !enabled;
  notePhotos.setEnabled(enabled);
  agendaPhotos.setEnabled(enabled);
- $('agendaPhotoDrive').hidden = enabled && connected;
  $('openNoteDrive').hidden = $('editNoteDrive').hidden = !enabled || connected;
  const remaining = localNotes().filter(note => !driveNotes.contains(note.id)).length;
  $('importLocalNotes').hidden = !enabled || !remaining;
@@ -1836,18 +1835,28 @@ function renderAgendaStages() {
  const actual = plan.actual ?? {};
  const next = steps.find(([kind]) => !actual[kind])?.[0];
  const list = $('agendaStageList');
+ const doughPhoto = $('agendaDoughPhoto');
+ const bakedPhotos = $('agendaPhotos');
  list.replaceChildren();
  for (const [kind,when] of steps) {
   const row = document.createElement('div');
   row.className = 'agenda-step';
-  const label = document.createElement('strong');
+  const band = document.createElement('div');
+  band.className = 'agenda-step-band';
+  const label = document.createElement('h3');
   label.textContent = stageLabels[kind];
+  band.append(label);
   const values = document.createElement('small');
   values.textContent = '予定 ' + (when ? when.replace('T',' ') : '未定');
   if (kind === next) {
    row.classList.add('next-agenda-step');
-   label.textContent += ' ・次の工程';
+   const nextLabel = document.createElement('small');
+   nextLabel.textContent = '次の工程';
+   band.append(nextLabel);
   }
+  if (kind === 'bake') band.append(doughPhoto);
+  const body = document.createElement('div');
+  body.className = 'agenda-step-body';
   const field = document.createElement('label');
   field.className = 'field';
   field.textContent = '実施日時';
@@ -1873,7 +1882,9 @@ function renderAgendaStages() {
   const now = listAction('clock','今を記録');
   now.onclick = () => save(dateTimeLocal(new Date()));
   field.append(time);
-  row.append(label,values,field,now);
+  body.append(values,field,now);
+  if (kind === 'bake') body.append(bakedPhotos);
+  row.append(band,body);
   list.append(row);
  }
  const updateRecordButton = () => {

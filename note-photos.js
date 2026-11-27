@@ -6,6 +6,7 @@ function createNotePhotoEditor(prefix, agenda) {
  const fileTag = 'ange-pizza-lab-note-photo-v1';
  const root = document.getElementById(prefix + 'PhotoSlots');
  const heading = document.getElementById(prefix + 'Photos');
+ const doughHost = agenda ? document.getElementById('agendaDoughPhoto') : null;
  const help = document.getElementById(prefix + 'PhotosHelp');
  const status = document.getElementById(prefix + 'PhotoStatus');
  const connection = window.angeDriveConnection;
@@ -78,41 +79,46 @@ function createNotePhotoEditor(prefix, agenda) {
    : !connected ? '写真の追加・差し替えにはGoogle Driveへの接続が必要です。'
    : agenda ? '撮った写真はDriveに保存し、Diarioの仕込み記録へ引き継ぎます。'
    : '写真の差し替えや取り外しは、仕込み記録を保存すると反映されます。';
+  help.hidden = agenda && enabled && connected;
   root.replaceChildren();
   for (const [key,label] of slots) {
    const selection = selections.get(key);
    const card = element('div');
-   card.className = 'note-photo-slot';
-   card.append(element('strong',label));
+   card.className = agenda ? 'agenda-photo-slot' : 'note-photo-slot';
+   if (!agenda) card.append(element('strong',label));
    const url = displays.get(key);
-   if (url) {
-    const image = element('img');
-    image.src = url;
-    image.alt = label;
-    card.append(image);
-   } else {
-    card.append(element('small',selection?.ref ? '保存済み' : '未登録'));
-   }
    const controls = element('div');
    controls.className = 'actions';
-   if (enabled && connected) {
-    const sources = agenda ? [['撮影',true],['写真を選ぶ',false]] : [['写真を選ぶ',false]];
+   if (agenda || (enabled && connected)) {
+    const shortLabel = key === 'before' ? '生地' : key === 'after' ? 'ピザ' : label;
+    const sources = agenda ? [[shortLabel,true],['写真を選ぶ',false]] : [['写真を選ぶ',false]];
     for (const [action,capture] of sources) {
+     if (!capture && (!enabled || !connected)) continue;
      const input = element('input');
      input.type = 'file';
      input.accept = 'image/*';
      input.hidden = true;
      if (capture) input.setAttribute('capture','environment');
      input.onchange = () => {
-      const [file] = input.files;
+      const file = input.files?.[0];
       if (file) select(key, file);
      };
-     const pick = button(action,()=>input.click());
-     pick.setAttribute('aria-label', label + 'の' + action);
+     const pick = button(action,() => {
+      if (agenda && (!enabled || !connected)) connection.open();
+      else input.click();
+     });
+     if (capture) {
+      pick.classList.add('agenda-camera');
+      const symbol = element('span');
+      symbol.className = 'agenda-camera-icon';
+      symbol.setAttribute('aria-hidden','true');
+      pick.prepend(symbol);
+     }
+     pick.setAttribute('aria-label', capture ? shortLabel + 'を撮影' : (agenda ? shortLabel : label) + 'の' + action);
      pick.disabled = saving || !!processing;
      controls.append(pick,input);
     }
-    if (selection) {
+    if (selection && enabled && connected) {
      const remove = button('削除',()=>{
       if (url) URL.revokeObjectURL(url);
       displays.delete(key);
@@ -127,7 +133,16 @@ function createNotePhotoEditor(prefix, agenda) {
     }
    }
    card.append(controls);
-   root.append(card);
+   if (url) {
+    const photo = element('img');
+    photo.src = url;
+    photo.alt = label;
+    card.append(photo);
+   } else if (!agenda || selection?.ref) {
+    card.append(element('small',selection?.ref ? '保存済み' : '未登録'));
+   }
+   if (agenda && key === 'before') doughHost.replaceChildren(card);
+   else root.append(card);
   }
   if (agenda && enabled && connected && !saving && !processing &&
       [...selections.values()].some(entry=>entry.blob)) root.append(button('写真の保存を再試行',saveAgendaPhotos));

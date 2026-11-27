@@ -543,9 +543,85 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
 .flour-phase #prefermentControls .formula-control { margin-bottom: 0; }
 .flour-name-edit { display: grid; grid-template-columns: minmax(0,1fr) 44px 44px; gap: 4px; margin-bottom: 6px; }
 .plan-reference-link { display: inline-flex; align-items: center; gap: 4px; color: var(--rose); font-size: 13px; }
-.agenda-step { border-top: 1px solid var(--line); padding: 8px; }
-.agenda-step small { display: block; color: var(--muted); font-size: 13px; }
-.next-agenda-step { background: var(--pink); border-radius: 9px; color: var(--rose); }
+.agenda-step {
+ margin-bottom: .7rem;
+ border: 1px solid var(--line);
+ border-radius: 12px;
+ overflow: clip;
+}
+.agenda-step-band {
+ display: flex;
+ align-items: center;
+ flex-wrap: wrap;
+ gap: .3rem .65rem;
+ padding: .5rem .7rem;
+ background: #f2e7dd;
+}
+.agenda-step-band h3 { margin: 0; font-size: 1rem; }
+.agenda-step-band small { font-weight: 700; }
+.next-agenda-step .agenda-step-band { background: var(--pink); color: var(--rose); }
+.agenda-step-body { padding: .65rem .7rem .75rem; }
+.agenda-step-body > small { display: block; color: var(--muted); font-size: .875rem; }
+#agendaDoughPhoto { margin-inline-start: auto; }
+.agenda-baked-photos {
+ display: grid;
+ grid-template-columns: repeat(2,minmax(0,1fr));
+ gap: .5rem;
+ margin-top: .55rem;
+ padding-top: .55rem;
+ border-top: 1px solid var(--line);
+}
+.agenda-photo-slot .actions { gap: .35rem; flex-wrap: wrap; }
+.agenda-photo-slot button:not(.agenda-camera) { padding: .4rem; font-size: .875rem; }
+.agenda-photo-slot img {
+ display: block;
+ max-width: 100%;
+ max-height: 5rem;
+ object-fit: contain;
+ border-radius: .3rem;
+ margin-top: .35rem;
+}
+button.agenda-camera {
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ gap: .4rem;
+ min-height: 44px;
+ padding: .35rem .65rem;
+}
+.agenda-camera-icon {
+ position: relative;
+ display: inline-block;
+ box-sizing: border-box;
+ width: 1.2rem;
+ height: .86rem;
+ flex: 0 0 auto;
+ border: 1.5px solid currentColor;
+ border-radius: .22rem;
+}
+.agenda-camera-icon::before,
+.agenda-camera-icon::after {
+ content: "";
+ position: absolute;
+ left: 50%;
+ transform: translateX(-50%);
+}
+.agenda-camera-icon::before {
+ top: -.27rem;
+ width: .5rem;
+ height: .25rem;
+ border: 1.5px solid currentColor;
+ border-bottom: 0;
+ border-radius: .12rem .12rem 0 0;
+}
+.agenda-camera-icon::after {
+ top: 50%;
+ width: .4rem;
+ height: .4rem;
+ border: 1.5px solid currentColor;
+ border-radius: 50%;
+ transform: translate(-50%,-50%);
+}
 
 .drive-check-result { white-space: pre-line; overflow-wrap: anywhere; }
 #driveCheckDialog button:disabled { opacity: .5; }

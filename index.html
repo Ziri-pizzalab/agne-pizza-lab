@@ -1,4 +1,4 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#faf6f0"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Ange Pizza Lab"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-192.png"><link rel="stylesheet" href="style.css?v=3034"><title>Ange Pizza Lab</title></head><body>
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#faf6f0"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Ange Pizza Lab"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-192.png"><link rel="stylesheet" href="style.css?v=3035"><title>Ange Pizza Lab</title></head><body>
 <header class="app-header" id="pageTop">
   <div class="header-inner">
     <div class="brand"><img src="icon-180.png" alt="" class="brand-icon"><h1>Ange Pizza Lab</h1></div>
@@ -48,13 +48,14 @@
   <section id="agendaStages" class="card" hidden aria-labelledby="agendaStagesTitle">
     <h2 id="agendaStagesTitle">工程</h2>
     <div id="agendaStageList"></div>
-    <section id="agendaPhotos" class="drive-recipes-controls" aria-labelledby="agendaPhotosTitle">
-      <h3 id="agendaPhotosTitle">仕込み写真 <small class="note">任意</small></h3>
-      <p id="agendaPhotosHelp" class="note"></p>
-      <button id="agendaPhotoDrive" type="button" class="quiet">Driveの設定</button>
-      <div id="agendaPhotoSlots" class="note-photo-grid"></div>
-      <p id="agendaPhotoStatus" class="note" role="status"></p>
-    </section>
+    <div id="agendaPhotoLayout" hidden>
+      <div id="agendaDoughPhoto"></div>
+      <section id="agendaPhotos" aria-label="仕込み写真">
+        <div id="agendaPhotoSlots" class="agenda-baked-photos"></div>
+        <p id="agendaPhotosHelp" class="note" hidden></p>
+        <p id="agendaPhotoStatus" class="note" role="status"></p>
+      </section>
+    </div>
     <p id="agendaStatus" class="note" role="status"></p>
     <button id="recordAgendaInDiario" type="button" class="quiet" disabled>Diarioで記録する</button>
   </section>
@@ -281,4 +282,4 @@
 <p id="summaryIngredients" class="summary-message" role="status" hidden></p>
 <div id="summaryDetails" hidden><table class="summary-table" aria-label="材料内訳（g）">
 <thead><tr><th scope="col">材料（g）</th><th id="summarySeedHeading" class="summary-phase-seed" scope="col">発酵種</th><th class="summary-phase-main" scope="col">本捏ね</th><th scope="col">合計</th></tr></thead>
-<tbody id="summaryMaterialRows"></tbody></table><div class="summary-balls" id="summaryBalls"></div><div class="summary-detail-title">発酵の参考時間</div><div id="referenceMethodSwitch" class="method-switch" role="group" aria-label="発酵方法"><button type="button" class="ferment-choice" data-ferment="room">常温</button><button type="button" class="ferment-choice" data-ferment="mixed">常温＋冷蔵庫</button></div><div id="fermentReference" class="note" aria-live="polite"></div></div></aside><footer class="app-footer"><a href="#pageTop">先頭へ</a></footer><script defer src="drive-check.js?v=3034"></script><script defer src="drive-recipes.js?v=3034"></script><script defer src="note-photos.js?v=3034"></script><script defer src="app.js?v=3034"></script></body></html>
+<tbody id="summaryMaterialRows"></tbody></table><div class="summary-balls" id="summaryBalls"></div><div class="summary-detail-title">発酵の参考時間</div><div id="referenceMethodSwitch" class="method-switch" role="group" aria-label="発酵方法"><button type="button" class="ferment-choice" data-ferment="room">常温</button><button type="button" class="ferment-choice" data-ferment="mixed">常温＋冷蔵庫</button></div><div id="fermentReference" class="note" aria-live="polite"></div></div></aside><footer class="app-footer"><a href="#pageTop">先頭へ</a></footer><script defer src="drive-check.js?v=3035"></script><script defer src="drive-recipes.js?v=3035"></script><script defer src="note-photos.js?v=3035"></script><script defer src="app.js?v=3035"></script></body></html>
