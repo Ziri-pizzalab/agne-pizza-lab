@@ -1,9 +1,6 @@
 'use strict';
 
-(() => {
- const kind = 'ange-pizza-lab-recipe-v1';
- const folderTag = 'ange-pizza-lab-recipe-folder';
- const modeKey = 'ange-drive-recipe-book';
+function createDriveCollection({kind, folderTag, folderName, label, prefix, validRecord, modeKey}) {
  const tombstone = 'deleted';
  const pending = new Map();
  let events = new Map();
@@ -12,7 +9,9 @@
  let enabled = false;
  let ready = false;
  let session = 0;
- try { enabled = localStorage.getItem(modeKey) === 'drive'; } catch {}
+ if (modeKey) {
+  try { enabled = localStorage.getItem(modeKey) === 'drive'; } catch {}
+ }
 
  function reset() {
   session++;
@@ -28,7 +27,7 @@
  function asEvent(file) {
   const props = file.appProperties;
   if (props?.angeType !== kind || !props.recipe || !file.id || !Number.isFinite(Date.parse(file.createdTime))) {
-   throw new Error('Driveのレシピ情報を読み取れませんでした。');
+   throw new Error('Driveの' + label + 'を読み取れませんでした。');
   }
   return {id:file.id, key:props.recipe, revision:props.revision || file.id,
    parent:props.parent, removed:props.status === tombstone, updated:file.createdTime};
@@ -60,7 +59,7 @@
   let token;
   do {
    const page = await client.fileList(kind, token);
-   if (page.incompleteSearch) throw new Error('Driveのレシピをすべて検索できませんでした。再試行してください。');
+   if (page.incompleteSearch) throw new Error('Driveの' + label + 'をすべて検索できませんでした。再試行してください。');
    for (const file of page.files ?? []) {
     const event = asEvent(file);
     if (!next.get(event.id)?.record) next.set(event.id, event);
@@ -74,7 +73,7 @@
    await Promise.all(unread.slice(i, i + 6).map(async event => {
     const data = await client.readJson(event.id);
     if (data?.format !== kind || data.key !== event.key || !validRecord(data.record)) {
-     throw new Error('保存されたレシピの形式を確認できませんでした。');
+     throw new Error('保存された' + label + 'の形式を確認できませんでした。');
     }
     event.record = data.record;
    }));
@@ -82,11 +81,6 @@
   requireSession(expected);
   events = next;
   ready = true;
- }
-
- function validRecord(record) {
-  return typeof record?.name === 'string' && record.name.trim() && record.state &&
-   typeof record.state === 'object' && !Array.isArray(record.state);
  }
 
  function list() {
@@ -107,10 +101,10 @@
   if (!upload) {
    const id = await client.newFileId();
    requireSession(expected);
-   upload = {id, key:payload.key || 'recipe-' + id, createdAt:new Date().toISOString()};
+   upload = {id, key:payload.key || prefix + '-' + id, createdAt:new Date().toISOString()};
    pending.set(saveKey, upload);
   }
-  if (!folder.id) folder.id = await client.findOrCreateFolder(folder, folderTag, 'Ange Pizza Lab - レシピ帳');
+  if (!folder.id) folder.id = await client.findOrCreateFolder(folder, folderTag, folderName);
   requireSession(expected);
   const data = {...payload, key:upload.key};
   const appProperties = {angeType:kind, recipe:upload.key};
@@ -118,7 +112,7 @@
   if (payload.parent) appProperties.parent = payload.parent;
   if (payload.removed) appProperties.status = tombstone;
   await client.uploadJson({
-   id:upload.id, name:'Recipe-' + upload.id + '.json', mimeType:'application/json',
+   id:upload.id, name:prefix + '-' + upload.id + '.json', mimeType:'application/json',
    parents:[folder.id], appProperties,
   }, data);
   const stored = await client.readJson(upload.id);
@@ -138,7 +132,7 @@
 
  function publicRecord(source) {
   const {_key,_i,_driveRevision,_driveUpdated,_driveOwner,_driveConflict,id,...record} = source;
-  return id ? record : {...record, legacyRecipeKey:_key + '::' + _i};
+  return id || prefix !== 'recipe' ? record : {...record, legacyRecipeKey:_key + '::' + _i};
  }
 
  async function save(record, source, removed = false) {
@@ -149,7 +143,7 @@
   const saveKey = canonical(payload);
   await refresh(context);
   if (source && !heads(source.id).some(event => event.revision === source._driveRevision) && !pending.has(saveKey)) {
-   throw new Error('このレシピは別の端末で更新されました。最新の一覧から開き直してください。');
+   throw new Error('この' + label + 'は別の端末で更新されました。最新の一覧から開き直してください。');
   }
   await append(context, payload, null, saveKey);
  }
@@ -162,7 +156,7 @@
  async function migrate(records) {
   const prepared = records.map(source => ({id:source.id, record:publicRecord(source)}));
   if (prepared.some(({record}) => !validRecord(record))) {
-   throw new Error('取り込み元に読み取れないレシピがあります。元のデータをご確認ください。');
+   throw new Error('取り込み元に読み取れない' + label + 'があります。元のデータをご確認ください。');
   }
   const context = await apiForUser();
   await refresh(context);
@@ -179,14 +173,29 @@
   return count;
  }
 
- window.angeDriveRecipes = {
+ return {
   get enabled() { return enabled; },
   get ready() { return ready && window.angeDriveConnection.connected(); },
   activate() {
-   localStorage.setItem(modeKey,'drive');
+   if (modeKey) localStorage.setItem(modeKey,'drive');
    enabled = true;
   },
   list, save, migrate,
+  contains(id) { return !!id && [...events.values()].some(event => event.key === id); },
   async load() { await refresh(await apiForUser()); },
  };
-})();
+}
+
+const isDriveRecord = value => value && typeof value === 'object' && !Array.isArray(value);
+
+window.angeDriveRecipes = createDriveCollection({
+ kind:'ange-pizza-lab-recipe-v1', folderTag:'ange-pizza-lab-recipe-folder',
+ folderName:'Ange Pizza Lab - レシピ帳', label:'レシピ', prefix:'recipe', modeKey:'ange-drive-recipe-book',
+ validRecord:record => typeof record?.name === 'string' && record.name.trim() && isDriveRecord(record.state),
+});
+window.angeDriveNotes = createDriveCollection({
+ kind:'ange-pizza-lab-note-v1', folderTag:'ange-pizza-lab-note-folder',
+ folderName:'Ange Pizza Lab - 仕込み記録', label:'仕込み記録', prefix:'note',
+ validRecord:record => typeof record?.recipeName === 'string' && isDriveRecord(record.inputs) &&
+  (record.stages === undefined || Array.isArray(record.stages)),
+});

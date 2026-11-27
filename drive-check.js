@@ -309,6 +309,8 @@
  field('driveConnectionShortcut').onclick = openConnection;
  field('modalDriveConnect').onclick = openConnection;
  field('editDriveConnect').onclick = openConnection;
+ field('openNoteDrive').onclick = openConnection;
+ field('editNoteDrive').onclick = openConnection;
  field('driveDiagnosticToggle').onclick = () => {
   const diagnostic = field('driveDiagnostic');
   diagnostic.hidden = !diagnostic.hidden;

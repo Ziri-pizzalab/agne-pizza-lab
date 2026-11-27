@@ -614,12 +614,40 @@ const FLOUR_NAMES_KEY = 'ange-v3-flour-names';
 const noteInputIds = ['noteStarted','noteTemp','noteHumidity','noteMethod','noteSeedHours','noteMatureHours','noteRating','noteMemo','noteBakeCondition','noteImprovement'];
 const stageLabels = {mixStart:'捏ね始め',mainStart:'本捏ね開始',bake:'焼き始め',starter:'発酵種の仕込み',kneaded:'捏ね上げ',chill:'冷蔵庫に入れる',unchill:'冷蔵庫から出す',divide:'分割・丸め',beforeBake:'焼く前',other:'その他'};
 const nextStage = {starter:'kneaded',kneaded:'chill',chill:'unchill',unchill:'divide',divide:'beforeBake'};
-let editingNoteId = null;
+const driveNotes = window.angeDriveNotes;
+let editingNote = null;
+let noteWriteTime = null;
 let noteRecipeFilter = null;
 let noteVisible = 5;
 
-function saveNotes(notes) {
- localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+function localNotes() {
+ const notes = read(NOTES_KEY, []);
+ return Array.isArray(notes) ? notes : [];
+}
+
+function savedNotes() {
+ if (!driveRecipes.enabled) return localNotes();
+ return [...driveNotes.list(), ...localNotes().filter(note => !driveNotes.contains(note.id))];
+}
+
+function updateNoteDriveControls() {
+ const enabled = driveRecipes.enabled;
+ const connected = window.angeDriveConnection.connected();
+ $('noteDriveControls').hidden = !enabled;
+ $('openNoteDrive').hidden = $('editNoteDrive').hidden = !enabled || connected;
+ const remaining = localNotes().filter(note => !driveNotes.contains(note.id)).length;
+ $('importLocalNotes').hidden = !enabled || !remaining;
+ $('noteDriveStatus').textContent = !connected ? '保存先 Google Drive ・ 未接続'
+  : driveNotes.ready ? '保存先 Google Drive' : '保存先 Google Drive ・ 未読み込み';
+}
+
+function refreshDriveNotes() {
+ if (!driveRecipes.enabled || !window.angeDriveConnection.connected()) return;
+ return runRecipeOperation($('noteHistoryStatus'), async () => {
+  await driveNotes.load();
+  showNotes();
+  $('noteHistoryStatus').textContent = '';
+ });
 }
 
 const dateTimeLocal=d=>{const pad=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes())};
@@ -655,9 +683,7 @@ function linkedNoteRecipe(note, recipes) {
 }
 
 function noteSeedVisibility() {
- const snapshot = editingNoteId
-  ? read(NOTES_KEY, []).find(note => note.id === editingNoteId)?.recipeSnapshot
-  : pickedRecipe().snapshot;
+ const snapshot = editingNote ? editingNote.recipeSnapshot : pickedRecipe().snapshot;
  $('noteSeedBlock').hidden = snapshot?.process === 'straight';
 }
 
@@ -715,6 +741,7 @@ function showRecipeNoteHistory(recipe) {
  $('recipeListView').hidden = true;
  $('ferment').hidden = false;
  switchNoteView('history');
+ if (!driveNotes.ready) refreshDriveNotes();
  $('backToRecipes').focus();
 }
 
@@ -723,7 +750,8 @@ function showNotes() {
  root.replaceChildren();
  const query = $('noteSearch').value.trim().toLocaleLowerCase();
  const ratingFilter = $('noteRatingFilter').value;
- const all = read(NOTES_KEY, []);
+ const all = savedNotes();
+ updateNoteDriveControls();
  const recipes = savedRecipes();
  const currentRecipeKey = noteRecipeFilter ? recipeKey(noteRecipeFilter) : null;
  $('noteRecipeFilterBar').hidden = !noteRecipeFilter;
@@ -743,7 +771,8 @@ function showNotes() {
  if (!notes.length) {
   const empty = document.createElement('p');
   empty.className = 'note';
-  empty.textContent = all.length ? '該当する仕込み記録がありません。' : 'まだ仕込み記録がありません。';
+  empty.textContent = driveRecipes.enabled && !driveNotes.ready ? 'Driveの仕込み記録は未読み込みです。' :
+   all.length ? '該当する仕込み記録がありません。' : 'まだ仕込み記録がありません。';
   root.append(empty);
  }
  for (const note of notes.slice(0, noteVisible)) {
@@ -807,16 +836,31 @@ function showNotes() {
   }
   const actions = document.createElement('div');
   actions.className = 'actions';
-  const edit = listAction('edit','編集');
-  edit.onclick = () => editSavedNote(note);
-  const remove = listAction('trash','仕込み記録を削除',true);
-  remove.onclick = () => {
-   if (!confirm('この仕込み記録を削除しますか？')) return;
-   saveNotes(read(NOTES_KEY,[]).filter(item => item.id !== note.id));
-   showNotes();
-  };
-  actions.append(edit,remove);
-  more.append(actions);
+  if (driveRecipes.enabled && !note._driveRevision) {
+   const local = document.createElement('small');
+   local.textContent = '端末内の記録 ・ Driveに取り込むと編集できます';
+   more.append(local);
+  } else {
+   const edit = listAction('edit','編集');
+   edit.onclick = () => editSavedNote(note);
+   const remove = listAction('trash','仕込み記録を削除',true);
+   remove.onclick = () => {
+    if (!confirm('この仕込み記録を削除しますか？')) return;
+    runRecipeOperation($('noteHistoryStatus'), async () => {
+     if (driveRecipes.enabled) await driveNotes.save(null,note,true);
+     else localStorage.setItem(NOTES_KEY,JSON.stringify(localNotes().filter(item => item.id !== note.id)));
+     showNotes();
+     $('noteHistoryStatus').textContent = '仕込み記録を削除しました。';
+    });
+   };
+   actions.append(edit,remove);
+   more.append(actions);
+  }
+  if (note._driveConflict) {
+   const conflict = document.createElement('small');
+   conflict.textContent = '別端末の変更と競合';
+   more.append(conflict);
+  }
   card.append(name,meta,preview,more);
   root.append(card);
  }
@@ -835,7 +879,8 @@ function loadNoteFields(inputs = {}, stages = []) {
 }
 
 function editSavedNote(note) {
- editingNoteId = note.id;
+ editingNote = note;
+ noteWriteTime = null;
  const linked = linkedNoteRecipe(note, savedRecipes());
  const field = $('noteRecipe');
  field.querySelector('option[value="past-note"]')?.remove();
@@ -870,7 +915,8 @@ function restoreNoteDraft(key) {
 }
 
 function resetNoteForm() {
- editingNoteId = null;
+ editingNote = null;
+ noteWriteTime = null;
  $('noteRecipe').querySelector('option[value="past-note"]')?.remove();
  $('noteRecipe').disabled = false;
  $('cancelNoteEdit').hidden = true;
@@ -905,39 +951,41 @@ function saveNoteEntry() {
  let stages;
  try { stages = noteStageValues(true); }
  catch (error) { status.textContent = error.message; return; }
- const notes = read(NOTES_KEY,[]);
- const position = editingNoteId ? notes.findIndex(note => note.id === editingNoteId) : -1;
- if (editingNoteId && position < 0) {
-  status.textContent = '編集中の仕込み記録が見つかりません';
-  return;
- }
- const existing = notes[position];
+ const existing = editingNote;
  const chosen = pickedRecipe();
- const recipes = savedRecipes();
- const linked = existing && linkedNoteRecipe(existing,recipes);
+ const linked = existing && linkedNoteRecipe(existing,savedRecipes());
+ const clean = existing && Object.fromEntries(Object.entries(existing).filter(([key])=> !key.startsWith('_drive')));
  const item = {
-  ...existing,
-  id:existing?.id || 'note-' + Date.now() + '-' + Math.random().toString(36).slice(2,8),
+  ...clean,
   recipeId:existing
    ? (existing.recipeId !== undefined ? existing.recipeId : linked ? recipeKey(linked) : null)
    : chosen.id,
   recipeName:existing?.recipeName || chosen.name,
   recipeSnapshot:existing?.recipeSnapshot || chosen.snapshot,
-  inputs:input, stages, savedAt:new Date().toISOString(),
+  inputs:input, stages, savedAt:noteWriteTime ??= new Date().toISOString(),
  };
- if (existing) notes[position] = item;
- else notes.unshift(item);
- try { saveNotes(notes); }
- catch { status.textContent = '保存できませんでした。端末の空き容量とブラウザ設定を確認してください'; return; }
- if (!existing) forgetNoteDraft($('noteRecipe').value);
- if (noteRecipeFilter && item.recipeId !== recipeKey(noteRecipeFilter)) noteRecipeFilter = null;
- noteVisible = 5;
- $('noteSearch').value = '';
- $('noteRatingFilter').value = '';
- resetNoteForm();
- $('noteHistoryStatus').textContent = '✓ 仕込みを保存しました';
- switchNoteView('history');
- window.scrollTo(0,0);
+ runRecipeOperation(status, async () => {
+  if (driveRecipes.enabled) {
+   if (existing && !existing._driveRevision) throw new Error('仕込み履歴から端末内の記録をDriveに取り込んでください。');
+   await driveNotes.save(item,existing);
+  } else {
+   const notes = localNotes();
+   const position = existing ? notes.findIndex(note => note.id === existing.id) : -1;
+   if (existing && position < 0) throw new Error('編集中の仕込み記録が見つかりません。');
+   if (existing) notes[position] = item;
+   else notes.unshift({...item,id:'note-' + crypto.randomUUID()});
+   localStorage.setItem(NOTES_KEY,JSON.stringify(notes));
+  }
+  if (!existing) forgetNoteDraft($('noteRecipe').value);
+  if (noteRecipeFilter && item.recipeId !== recipeKey(noteRecipeFilter)) noteRecipeFilter = null;
+  noteVisible = 5;
+  $('noteSearch').value = '';
+  $('noteRatingFilter').value = '';
+  resetNoteForm();
+  $('noteHistoryStatus').textContent = driveRecipes.enabled ? '✓ 仕込み記録をGoogle Driveに保存しました' : '✓ 仕込みを保存しました';
+  switchNoteView('history');
+  window.scrollTo(0,0);
+ });
 }
 
 function initNotes() {
@@ -946,6 +994,17 @@ function initNotes() {
  $('noteRecipe').onchange = noteSeedVisibility;
  for (const id of ['noteSeedHours','noteMatureHours']) $(id).oninput = updateDurations;
  $('saveNote').onclick = saveNoteEntry;
+ $('refreshNotes').onclick = refreshDriveNotes;
+ $('importLocalNotes').onclick = () => {
+  const notes = localNotes();
+  if (!confirm('この端末にある仕込み記録をDriveに取り込みますか？')) return;
+  runRecipeOperation($('noteHistoryStatus'), async () => {
+   const count = await driveNotes.migrate(notes);
+   showNotes();
+   $('noteHistoryStatus').textContent = count ? '仕込み記録をDriveに取り込みました（新規 ' + count + '件）。'
+    : '対象の仕込み記録はすでにDriveに取り込まれています。';
+  });
+ };
  $('addNoteStage').onclick = () => {
   const stages = noteStageValues();
   const kind = stages.length ? nextStage[stages.at(-1).kind] || 'other' : 'kneaded';
@@ -1464,13 +1523,14 @@ function saveModalRecipe(skip) {
 
 let recipeOperationPending = false;
 const recipeOperationButtons = ['overwriteRecipe','saveRecipe','cancelRecipeEdit','modalCancel','modalSave','modalSkip',
- 'enableDriveRecipes','importLocalRecipes','selectDriveBackup','driveBackupFiles','retryDriveBackup','reloadDriveRecipes','editDriveConnect','modalDriveConnect'];
+ 'enableDriveRecipes','importLocalRecipes','selectDriveBackup','driveBackupFiles','retryDriveBackup','reloadDriveRecipes','editDriveConnect','modalDriveConnect','saveNote','cancelNoteEdit','refreshNotes','importLocalNotes'];
 
 function updateDriveBookControls() {
  const connected = window.angeDriveConnection.connected();
  const localCount = localRecipes().length;
  $('driveRecipesControls').hidden = !driveRecipes.enabled;
  $('driveBackupNotice').hidden = !driveRecipes.enabled;
+ updateNoteDriveControls();
  $('modalDriveConnect').hidden = $('editDriveConnect').hidden = !driveRecipes.enabled || connected;
  $('enableDriveRecipes').hidden = driveRecipes.enabled;
  $('importLocalRecipes').hidden = localCount === 0;
@@ -1592,7 +1652,10 @@ document.addEventListener('ange-drive-session', () => {
  backupImportRecords = undefined;
  $('retryDriveBackup').hidden = true;
  renderRecipeBook();
- if (driveRecipes.enabled && window.angeDriveConnection.connected()) refreshDriveBook();
+ if (!$('ferment').hidden) {
+  showNotes();
+  refreshDriveNotes();
+ } else if (driveRecipes.enabled && window.angeDriveConnection.connected()) refreshDriveBook();
 });
 $('recipeModal').addEventListener('cancel', event => { if (recipeOperationPending) event.preventDefault(); });
 
@@ -1645,7 +1708,7 @@ function updateSectionMetrics(c) {
 updateSectionMetrics(calc());syncDurationPicks();
 
 function saveNoteDraft() {
- if (editingNoteId) return;
+ if (editingNote) return;
  try {
   const key = $('noteRecipe').value;
   const stored = noteDraftStorage();
