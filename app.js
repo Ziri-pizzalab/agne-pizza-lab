@@ -616,6 +616,8 @@ const stageLabels = {mixStart:'捏ね始め',mainStart:'本捏ね開始',bake:'�
 const nextStage = {starter:'kneaded',kneaded:'chill',chill:'unchill',unchill:'divide',divide:'beforeBake'};
 const driveNotes = window.angeDriveNotes;
 const notePhotos = window.angeNotePhotos;
+const agendaPhotos = window.angeAgendaPhotos;
+let noteAgendaDraft = null;
 let editingNote = null;
 let noteWriteTime = null;
 let noteRecipeFilter = null;
@@ -636,6 +638,8 @@ function updateNoteDriveControls() {
  const connected = window.angeDriveConnection.connected();
  $('noteDriveControls').hidden = !enabled;
  notePhotos.setEnabled(enabled);
+ agendaPhotos.setEnabled(enabled);
+ $('agendaPhotoDrive').hidden = enabled && connected;
  $('openNoteDrive').hidden = $('editNoteDrive').hidden = !enabled || connected;
  const remaining = localNotes().filter(note => !driveNotes.contains(note.id)).length;
  $('importLocalNotes').hidden = !enabled || !remaining;
@@ -924,6 +928,7 @@ function resetNoteForm() {
  editingNote = null;
  noteWriteTime = null;
  notePhotos.reset();
+ noteAgendaDraft = null;
  $('noteRecipe').querySelector('option[value="past-note"]')?.remove();
  $('noteRecipe').disabled = false;
  $('cancelNoteEdit').hidden = true;
@@ -974,9 +979,10 @@ function saveNoteEntry() {
  runRecipeOperation(status, async () => {
   if (driveRecipes.enabled) {
    if (existing && !existing._driveRevision) throw new Error('仕込み履歴から端末内の記録をDriveに取り込んでください。');
-   const {refs,owner} = await notePhotos.save(existing?._driveOwner);
+   const {refs,owner} = await notePhotos.save(existing?._driveOwner ?? noteAgendaDraft?.owner);
    if (existing?.photos || Object.keys(refs).length) item.photos = refs;
    await driveNotes.save(item,existing,false,owner);
+   if (noteAgendaDraft) agendaPhotos.finishAgenda(noteAgendaDraft);
   } else {
    const notes = localNotes();
    const position = existing ? notes.findIndex(note => note.id === existing.id) : -1;
@@ -1870,14 +1876,24 @@ function renderAgendaStages() {
   row.append(label,values,field,now);
   list.append(row);
  }
- $('recordAgendaInDiario').disabled = !steps.some(([kind]) => actual[kind]);
+ const updateRecordButton = () => {
+  const hasActuals = steps.some(([kind]) => actual[kind]);
+  $('recordAgendaInDiario').disabled = !agendaPhotos.readyForHandoff() || (!hasActuals && !agendaPhotos.hasPhotos());
+ };
+ agendaPhotos.loadAgenda(plan.start + '|' + plan.process,updateRecordButton);
+ updateRecordButton();
 }
 
 function recordAgendaInDiario() {
  const plan = read(PLAN_KEY,null);
- if (!plan) return;
+ if (!plan || !agendaPhotos.readyForHandoff()) return;
+ const photoDraft = agendaPhotos.hasPhotos() ? agendaPhotos.snapshot() : null;
  showRecipeNoteHistory(null);
  const hasDraft = openNewNote(false);
+ if (photoDraft) {
+  noteAgendaDraft = photoDraft;
+  notePhotos.accept(photoDraft);
+ }
  const existing = noteStageValues();
  const start = plan.actual?.[plan.process === 'straight' ? 'mixStart' : 'starter'];
  if (start && !hasDraft) $('noteStarted').value = start;

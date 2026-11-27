@@ -1,13 +1,13 @@
 'use strict';
 
-(() => {
+function createNotePhotoEditor(prefix, agenda) {
  const slots = [['before','焼成前'],['after','焼成後'],['section','断面']];
  const folderTag = 'ange-pizza-lab-note-photo-folder';
  const fileTag = 'ange-pizza-lab-note-photo-v1';
- const root = document.getElementById('notePhotoSlots');
- const heading = document.getElementById('notePhotos');
- const help = document.getElementById('notePhotosHelp');
- const status = document.getElementById('notePhotoStatus');
+ const root = document.getElementById(prefix + 'PhotoSlots');
+ const heading = document.getElementById(prefix + 'Photos');
+ const help = document.getElementById(prefix + 'PhotosHelp');
+ const status = document.getElementById(prefix + 'PhotoStatus');
  const connection = window.angeDriveConnection;
  const displays = new Map();
  const historyDisposers = new Set();
@@ -18,6 +18,9 @@
  let formVersion = 0;
  let sessionVersion = 0;
  let destination = {};
+ let agendaDraft = null;
+ const draftKey = 'ange-agenda-photo-cache';
+ let changed = () => {};
 
  function element(tag, label) {
   const output = document.createElement(tag);
@@ -68,11 +71,13 @@
  }
 
  function render() {
-  heading.hidden = !enabled;
-  if (!enabled) return;
+  heading.hidden = !enabled && !agenda;
+  if (!enabled && !agenda) return;
   const connected = connection.connected();
-  help.textContent = connected ? '必要な写真だけ追加し、仕込み記録を保存するとDriveに反映されます。'
-   : '写真の追加・差し替えにはGoogle Driveへの接続が必要です。';
+  help.textContent = !enabled ? 'Driveのレシピ帳を有効にすると写真を追加できます。'
+   : !connected ? '写真の追加・差し替えにはGoogle Driveへの接続が必要です。'
+   : agenda ? '撮った写真はDriveに保存し、Diarioの仕込み記録へ引き継ぎます。'
+   : '写真の差し替えや取り外しは、仕込み記録を保存すると反映されます。';
   root.replaceChildren();
   for (const [key,label] of slots) {
    const selection = selections.get(key);
@@ -90,8 +95,9 @@
    }
    const controls = element('div');
    controls.className = 'actions';
-   if (connected) {
-    for (const [action,capture] of [['撮影',true],['写真を選ぶ',false]]) {
+   if (enabled && connected) {
+    const sources = agenda ? [['撮影',true],['写真を選ぶ',false]] : [['写真を選ぶ',false]];
+    for (const [action,capture] of sources) {
      const input = element('input');
      input.type = 'file';
      input.accept = 'image/*';
@@ -111,6 +117,8 @@
       if (url) URL.revokeObjectURL(url);
       displays.delete(key);
       selections.delete(key);
+      if (agenda) cacheAgenda();
+      changed();
       render();
      });
      remove.setAttribute('aria-label', label + 'の写真を削除');
@@ -121,6 +129,8 @@
    card.append(controls);
    root.append(card);
   }
+  if (agenda && enabled && connected && !saving && !processing &&
+      [...selections.values()].some(entry=>entry.blob)) root.append(button('写真の保存を再試行',saveAgendaPhotos));
  }
 
  async function compress(file) {
@@ -159,6 +169,7 @@
  async function select(key,file) {
   const version = formVersion;
   processing++;
+  let selected = false;
   status.textContent = '写真を準備しています…';
   render();
   try {
@@ -168,15 +179,18 @@
    if (displays.has(key)) URL.revokeObjectURL(displays.get(key));
    displays.set(key,URL.createObjectURL(blob));
    selections.set(key,{blob,sha256,uploads:new Map()});
+   selected = true;
    status.textContent = '';
   } catch (error) {
    if (version === formVersion) status.textContent = error.message;
   } finally {
    if (version === formVersion) {
     processing--;
+    changed();
     render();
    }
   }
+  if (selected && agenda && version === formVersion) await saveAgendaPhotos();
  }
 
  function checkSession(session,form) {
@@ -188,10 +202,11 @@
   const form = formVersion;
   const pending = [...selections.entries()].filter(([,entry])=>entry.blob);
   const refs = readRefs(Object.fromEntries([...selections].map(([key,entry])=>[key,entry.ref])));
-  if (!pending.length) return {refs};
+  if (!pending.length) return {refs,owner:expectedOwner};
   const session = sessionVersion;
   const api = connection.api();
   saving = true;
+  changed();
   status.textContent = '写真をDriveに保存しています…';
   render();
   try {
@@ -224,6 +239,7 @@
    return {refs,owner};
   } finally {
    saving = false;
+   changed();
    if (form === formVersion) {
     if (status.textContent === '写真をDriveに保存しています…') status.textContent = '';
     render();
@@ -231,6 +247,63 @@
   }
  }
 
+
+ function loadAgenda(key, onChange) {
+  changed = onChange;
+  if (agendaDraft?.key === key) return;
+  let cached;
+  try { cached = JSON.parse(localStorage.getItem(draftKey)); } catch {}
+  agendaDraft = {key,owner:cached?.key === key ? cached.owner : undefined};
+  reset(cached?.key === key ? cached.refs : undefined);
+ }
+
+ function cacheAgenda() {
+  if (!agendaDraft) return;
+  const refs = readRefs(Object.fromEntries([...selections].map(([key,entry])=>[key,entry.ref])));
+  try {
+   if (Object.keys(refs).length) localStorage.setItem(draftKey,JSON.stringify({...agendaDraft,refs}));
+   else localStorage.removeItem(draftKey);
+  } catch {}
+ }
+
+ async function saveAgendaPhotos() {
+  const form = formVersion;
+  try {
+   const {refs,owner} = await save(agendaDraft.owner);
+   for (const [key,ref] of Object.entries(refs)) selections.set(key,{ref});
+   agendaDraft.owner = owner;
+   cacheAgenda();
+   status.textContent = '写真をDriveに保存しました。';
+  } catch (error) {
+   if (form !== formVersion) return;
+   connection.expireIfUnauthorized(error);
+   status.textContent = error.message + ' 写真はこの画面に残っています。';
+  }
+  changed();
+  render();
+ }
+
+ function readyForHandoff() { return !saving && !processing; }
+ function hasPhotos() { return selections.size > 0; }
+ function snapshot() {
+  return {key:agendaDraft?.key, owner:agendaDraft?.owner, photos:new Map(selections)};
+ }
+ function accept(snapshot) {
+  reset();
+  selections = new Map(snapshot.photos);
+  render();
+ }
+ function matches(snapshot) {
+  return agendaDraft?.key === snapshot.key && selections.size === snapshot.photos.size &&
+   [...selections].every(([key,entry])=>entry === snapshot.photos.get(key));
+ }
+ function finishAgenda(snapshot) {
+  if (!matches(snapshot)) return;
+  reset();
+  agendaDraft.owner = undefined;
+  cacheAgenda();
+  changed();
+ }
 
  function history(photos) {
   const refs = readRefs(photos);
@@ -285,5 +358,9 @@
   clearHistory();
   render();
  });
- window.angeNotePhotos = {setEnabled,reset,save,history,clearHistory};
-})();
+ return {setEnabled,reset,save,history,clearHistory,loadAgenda,snapshot,accept,
+  readyForHandoff,hasPhotos,finishAgenda};
+}
+
+window.angeNotePhotos = createNotePhotoEditor('note',false);
+window.angeAgendaPhotos = createNotePhotoEditor('agenda',true);

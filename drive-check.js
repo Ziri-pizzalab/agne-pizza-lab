@@ -328,6 +328,7 @@
  field('modalDriveConnect').onclick = openConnection;
  field('editDriveConnect').onclick = openConnection;
  field('openNoteDrive').onclick = openConnection;
+ field('agendaPhotoDrive').onclick = openConnection;
  field('editNoteDrive').onclick = openConnection;
  field('driveDiagnosticToggle').onclick = () => {
   const diagnostic = field('driveDiagnostic');
