@@ -555,16 +555,16 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
  overflow: clip;
 }
 .agenda-step[data-progress="complete"] {
- --step-surface: #edf4ea;
- --step-band: #dcebd7;
- --step-border: #b8cbb2;
- --step-ink: #38543c;
+ --step-surface: #eff1f5;
+ --step-band: #dce0e8;
+ --step-border: #b2bac8;
+ --step-ink: #3d4657;
 }
 .agenda-step[data-progress="current"] {
- --step-surface: #fbecef;
- --step-band: #efced7;
- --step-border: #a65365;
- --step-ink: #6c2e42;
+ --step-surface: #f1eafa;
+ --step-band: #e2d4f4;
+ --step-border: #8257a6;
+ --step-ink: #502d73;
  box-shadow: inset 0 0 0 1px var(--step-border);
 }
 .agenda-step-band {
