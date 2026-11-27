@@ -1840,20 +1840,20 @@ function renderAgendaStages() {
  list.replaceChildren();
  for (const [kind,when] of steps) {
   const row = document.createElement('div');
+  const progress = actual[kind] ? 'complete' : kind === next ? 'current' : 'waiting';
   row.className = 'agenda-step';
+  row.dataset.progress = progress;
+  if (progress === 'current') row.setAttribute('aria-current','step');
   const band = document.createElement('div');
   band.className = 'agenda-step-band';
   const label = document.createElement('h3');
   label.textContent = stageLabels[kind];
-  band.append(label);
+  const progressLabel = document.createElement('small');
+  progressLabel.className = 'agenda-step-status';
+  progressLabel.textContent = {complete:'完了',current:'現在の工程',waiting:'未着手'}[progress];
+  band.append(label,progressLabel);
   const values = document.createElement('small');
   values.textContent = '予定 ' + (when ? when.replace('T',' ') : '未定');
-  if (kind === next) {
-   row.classList.add('next-agenda-step');
-   const nextLabel = document.createElement('small');
-   nextLabel.textContent = '次の工程';
-   band.append(nextLabel);
-  }
   if (kind === 'bake') band.append(doughPhoto);
   const body = document.createElement('div');
   body.className = 'agenda-step-body';

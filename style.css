@@ -544,10 +544,28 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
 .flour-name-edit { display: grid; grid-template-columns: minmax(0,1fr) 44px 44px; gap: 4px; margin-bottom: 6px; }
 .plan-reference-link { display: inline-flex; align-items: center; gap: 4px; color: var(--rose); font-size: 13px; }
 .agenda-step {
+ --step-surface: #fcfaf7;
+ --step-band: #eee5db;
+ --step-border: #ddd0c3;
+ --step-ink: #614936;
  margin-bottom: .7rem;
- border: 1px solid var(--line);
+ background: var(--step-surface);
+ border: 1px solid var(--step-border);
  border-radius: 12px;
  overflow: clip;
+}
+.agenda-step[data-progress="complete"] {
+ --step-surface: #edf4ea;
+ --step-band: #dcebd7;
+ --step-border: #b8cbb2;
+ --step-ink: #38543c;
+}
+.agenda-step[data-progress="current"] {
+ --step-surface: #fbecef;
+ --step-band: #efced7;
+ --step-border: #a65365;
+ --step-ink: #6c2e42;
+ box-shadow: inset 0 0 0 1px var(--step-border);
 }
 .agenda-step-band {
  display: flex;
@@ -555,11 +573,24 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
  flex-wrap: wrap;
  gap: .3rem .65rem;
  padding: .5rem .7rem;
- background: #f2e7dd;
+ background: var(--step-band);
+ color: var(--step-ink);
+ border-bottom: 1px solid var(--step-border);
 }
 .agenda-step-band h3 { margin: 0; font-size: 1rem; }
-.agenda-step-band small { font-weight: 700; }
-.next-agenda-step .agenda-step-band { background: var(--pink); color: var(--rose); }
+.agenda-step-status {
+ font-size: .8rem;
+ font-weight: 700;
+ border: 1px solid var(--step-border);
+ border-radius: 999px;
+ padding: .12rem .48rem;
+ background: var(--step-surface);
+}
+.agenda-step[data-progress="current"] .agenda-step-status {
+ background: var(--step-ink);
+ border-color: var(--step-ink);
+ color: #fff;
+}
 .agenda-step-body { padding: .65rem .7rem .75rem; }
 .agenda-step-body > small { display: block; color: var(--muted); font-size: .875rem; }
 #agendaDoughPhoto { margin-inline-start: auto; }
