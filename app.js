@@ -615,6 +615,7 @@ const noteInputIds = ['noteStarted','noteTemp','noteHumidity','noteMethod','note
 const stageLabels = {mixStart:'捏ね始め',mainStart:'本捏ね開始',bake:'焼き始め',starter:'発酵種の仕込み',kneaded:'捏ね上げ',chill:'冷蔵庫に入れる',unchill:'冷蔵庫から出す',divide:'分割・丸め',beforeBake:'焼く前',other:'その他'};
 const nextStage = {starter:'kneaded',kneaded:'chill',chill:'unchill',unchill:'divide',divide:'beforeBake'};
 const driveNotes = window.angeDriveNotes;
+const notePhotos = window.angeNotePhotos;
 let editingNote = null;
 let noteWriteTime = null;
 let noteRecipeFilter = null;
@@ -634,6 +635,7 @@ function updateNoteDriveControls() {
  const enabled = driveRecipes.enabled;
  const connected = window.angeDriveConnection.connected();
  $('noteDriveControls').hidden = !enabled;
+ notePhotos.setEnabled(enabled);
  $('openNoteDrive').hidden = $('editNoteDrive').hidden = !enabled || connected;
  const remaining = localNotes().filter(note => !driveNotes.contains(note.id)).length;
  $('importLocalNotes').hidden = !enabled || !remaining;
@@ -746,6 +748,7 @@ function showRecipeNoteHistory(recipe) {
 }
 
 function showNotes() {
+ notePhotos.clearHistory();
  const root = $('noteList');
  root.replaceChildren();
  const query = $('noteSearch').value.trim().toLocaleLowerCase();
@@ -834,6 +837,8 @@ function showNotes() {
    }
    more.append(stages);
   }
+  const photos = notePhotos.history(note.photos);
+  if (photos) more.append(photos);
   const actions = document.createElement('div');
   actions.className = 'actions';
   if (driveRecipes.enabled && !note._driveRevision) {
@@ -881,6 +886,7 @@ function loadNoteFields(inputs = {}, stages = []) {
 function editSavedNote(note) {
  editingNote = note;
  noteWriteTime = null;
+ notePhotos.reset(note.photos);
  const linked = linkedNoteRecipe(note, savedRecipes());
  const field = $('noteRecipe');
  field.querySelector('option[value="past-note"]')?.remove();
@@ -917,6 +923,7 @@ function restoreNoteDraft(key) {
 function resetNoteForm() {
  editingNote = null;
  noteWriteTime = null;
+ notePhotos.reset();
  $('noteRecipe').querySelector('option[value="past-note"]')?.remove();
  $('noteRecipe').disabled = false;
  $('cancelNoteEdit').hidden = true;
@@ -967,7 +974,9 @@ function saveNoteEntry() {
  runRecipeOperation(status, async () => {
   if (driveRecipes.enabled) {
    if (existing && !existing._driveRevision) throw new Error('仕込み履歴から端末内の記録をDriveに取り込んでください。');
-   await driveNotes.save(item,existing);
+   const {refs,owner} = await notePhotos.save(existing?._driveOwner);
+   if (existing?.photos || Object.keys(refs).length) item.photos = refs;
+   await driveNotes.save(item,existing,false,owner);
   } else {
    const notes = localNotes();
    const position = existing ? notes.findIndex(note => note.id === existing.id) : -1;

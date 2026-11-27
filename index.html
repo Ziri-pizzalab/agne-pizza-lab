@@ -1,4 +1,4 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#faf6f0"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Ange Pizza Lab"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-192.png"><link rel="stylesheet" href="style.css?v=3032"><title>Ange Pizza Lab</title></head><body>
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#faf6f0"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Ange Pizza Lab"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-192.png"><link rel="stylesheet" href="style.css?v=3033"><title>Ange Pizza Lab</title></head><body>
 <header class="app-header" id="pageTop">
   <div class="header-inner">
     <div class="brand"><img src="icon-180.png" alt="" class="brand-icon"><h1>Ange Pizza Lab</h1></div>
@@ -151,6 +151,12 @@
 <div class="field"><label for="noteRating">出来栄え</label><select id="noteRating"><option value="">未評価</option><option value="1">★☆☆☆☆（1）</option><option value="2">★★☆☆☆（2）</option><option value="3">★★★☆☆（3）</option><option value="4">★★★★☆（4）</option><option value="5">★★★★★（5）</option></select></div><div class="field"><label for="noteBakeCondition">焼成条件</label><input id="noteBakeCondition" placeholder="例：窯300℃、3分"></div>
 <div class="field"><label for="noteMemo">感想・メモ</label><textarea id="noteMemo" rows="3"></textarea></div>
 <div class="field"><label for="noteImprovement">次回の改善点</label><textarea id="noteImprovement" rows="2"></textarea></div>
+<section id="notePhotos" class="drive-recipes-controls" aria-labelledby="notePhotosTitle" hidden>
+<h3 id="notePhotosTitle">仕込み写真 <small class="note">任意</small></h3>
+<p id="notePhotosHelp" class="note"></p>
+<div id="notePhotoSlots" class="note-photo-grid"></div>
+<p id="notePhotoStatus" class="note" role="status"></p>
+</section>
 <p id="noteStatus" class="note" role="status"></p>
 <button id="editNoteDrive" type="button" class="quiet" hidden>Driveに接続</button>
 <button id="cancelNoteEdit" type="button" class="quiet" hidden>編集をやめる</button>
@@ -268,4 +274,4 @@
 <p id="summaryIngredients" class="summary-message" role="status" hidden></p>
 <div id="summaryDetails" hidden><table class="summary-table" aria-label="材料内訳（g）">
 <thead><tr><th scope="col">材料（g）</th><th id="summarySeedHeading" class="summary-phase-seed" scope="col">発酵種</th><th class="summary-phase-main" scope="col">本捏ね</th><th scope="col">合計</th></tr></thead>
-<tbody id="summaryMaterialRows"></tbody></table><div class="summary-balls" id="summaryBalls"></div><div class="summary-detail-title">発酵の参考時間</div><div id="referenceMethodSwitch" class="method-switch" role="group" aria-label="発酵方法"><button type="button" class="ferment-choice" data-ferment="room">常温</button><button type="button" class="ferment-choice" data-ferment="mixed">常温＋冷蔵庫</button></div><div id="fermentReference" class="note" aria-live="polite"></div></div></aside><footer class="app-footer"><a href="#pageTop">先頭へ</a></footer><script defer src="drive-check.js?v=3032"></script><script defer src="drive-recipes.js?v=3032"></script><script defer src="app.js?v=3032"></script></body></html>
+<tbody id="summaryMaterialRows"></tbody></table><div class="summary-balls" id="summaryBalls"></div><div class="summary-detail-title">発酵の参考時間</div><div id="referenceMethodSwitch" class="method-switch" role="group" aria-label="発酵方法"><button type="button" class="ferment-choice" data-ferment="room">常温</button><button type="button" class="ferment-choice" data-ferment="mixed">常温＋冷蔵庫</button></div><div id="fermentReference" class="note" aria-live="polite"></div></div></aside><footer class="app-footer"><a href="#pageTop">先頭へ</a></footer><script defer src="drive-check.js?v=3033"></script><script defer src="drive-recipes.js?v=3033"></script><script defer src="note-photos.js?v=3033"></script><script defer src="app.js?v=3033"></script></body></html>

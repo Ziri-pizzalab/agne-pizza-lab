@@ -135,8 +135,9 @@ function createDriveCollection({kind, folderTag, folderName, label, prefix, vali
   return id || prefix !== 'recipe' ? record : {...record, legacyRecipeKey:_key + '::' + _i};
  }
 
- async function save(record, source, removed = false) {
+ async function save(record, source, removed = false, photoOwner) {
   const context = await apiForUser();
+  if (photoOwner && photoOwner !== owner) throw new Error('写真を保存したGoogleアカウントで接続してください。');
   if (source && source._driveOwner !== owner) throw new Error('編集元のGoogleアカウントで接続し直してください。');
   const payload = {format:kind, key:source?.id ?? null, parent:source?._driveRevision ?? null,
    removed, record:removed ? null : record};

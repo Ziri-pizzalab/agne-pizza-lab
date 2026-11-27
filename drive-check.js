@@ -11,7 +11,7 @@
  const field = id => document.getElementById(id);
 
  function createApi(accessToken, fetcher = fetch) {
-  async function request(url, options = {}) {
+  async function request(url, options = {}, parse = response => response.json()) {
    let response;
    try {
     response = await fetcher(url, {
@@ -22,7 +22,7 @@
    } catch {
     throw new Error('通信結果を確認できませんでした。接続を確認して再試行してください。');
    }
-   if (response.ok) return response.json();
+   if (response.ok) return parse(response);
    const messages = {
     401:'Googleの接続期限が切れました。再接続してから再試行してください。',
     403:'Google Driveへのアクセスが許可されていません。権限や利用アカウントを確認してください。',
@@ -47,7 +47,7 @@
 
   async function newFileId() {
    const {ids} = await request(api + '/files/generateIds?count=1&space=drive');
-   if (!ids?.[0]) throw new Error('Google Driveでテスト用のファイルIDを取得できませんでした。');
+   if (!ids?.[0]) throw new Error('Google DriveでファイルIDを取得できませんでした。');
    return ids[0];
   }
 
@@ -106,6 +106,24 @@
    }
   }
 
+  function readPhoto(id) {
+   return request(api + '/files/' + encodeURIComponent(id) + '?alt=media', {}, response => response.blob());
+  }
+
+  async function uploadPhoto(metadata, photo) {
+   const boundary = 'ange-' + crypto.randomUUID();
+   const headers = ['--' + boundary, 'Content-Type: application/json; charset=UTF-8', '',
+    JSON.stringify(metadata), '--' + boundary, 'Content-Type: image/jpeg', '', ''].join('\r\n');
+   const body = new Blob([headers, photo, '\r\n--' + boundary + '--\r\n']);
+   try {
+    await request(upload + '/files?uploadType=multipart&fields=id', {
+     method:'POST', headers:{'Content-Type':'multipart/related; boundary=' + boundary}, body,
+    });
+   } catch (error) {
+    if (error.status !== 409) throw error;
+   }
+  }
+
   async function writeSample(sample, folderId) {
    await uploadJson({
     id:sample.id,
@@ -130,7 +148,7 @@
    if (!user?.permissionId) throw new Error('接続先のGoogleアカウントを確認できませんでした。');
    return user.permissionId;
   }
-  return {userId,findOrCreateFolder,createSample,writeSample,readLatestSample,fileList,newFileId,readJson,uploadJson};
+  return {userId,findOrCreateFolder,createSample,writeSample,readLatestSample,fileList,newFileId,readJson,uploadJson,readPhoto,uploadPhoto};
  }
 
  const dialog = field('driveCheckDialog');

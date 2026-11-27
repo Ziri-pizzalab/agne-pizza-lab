@@ -559,3 +559,27 @@ button.icon-only { width: 44px; padding: 0; color: var(--rose); background: tran
 .drive-recipes-controls h3 { margin: .6rem 0 .35rem; }
 #driveDiagnostic { margin: .7rem 0; }
 #driveCheckDialog > button { margin-top: .4rem; }
+
+.note-photo-grid {
+ display: grid;
+ gap: .55rem;
+ grid-template-columns: repeat(auto-fit,minmax(min(13rem,100%),1fr));
+ margin-block: .55rem;
+}
+.note-photo-slot {
+ display: grid;
+ gap: .4rem;
+ align-content: start;
+ margin: 0;
+ padding: .55rem;
+ border: 1px solid var(--line);
+ border-radius: .65rem;
+}
+.note-photo-slot .actions:empty { display: none; }
+.note-photo-slot img {
+ display: block;
+ width: 100%;
+ max-height: 16rem;
+ object-fit: contain;
+ border-radius: .35rem;
+}
